@@ -618,3 +618,17 @@ body.no-control .cc-caja:not(.radio-caja):not(.relato-caja){display:none}
   padding:4px 8px; gap:8px; font-size:10px; flex-wrap:nowrap; overflow:hidden;
 }
 .tabla-vivo .cc-caja > summary{padding:5px 8px}
+
+/* ---------------- pantalla completa ---------------- */
+.btn-lleno{flex:0 0 auto; font-size:13px; padding:4px 8px}
+/* Se gana la barra del sitio entera y unos milímetros de la cabecera: en una
+   carrera eso son dos o tres pilotos más en la tabla. */
+body.lleno #barra{display:none}
+body.lleno .visor-cab{padding:4px 10px}
+body.lleno .vc-tit .vc-ses{display:none}
+body.lleno .tabla-vivo .leyenda{display:none}
+
+.destrabar{
+  width:100%; font-size:11px; padding:6px 8px; background:var(--acento);
+  border:0; color:#fff; border-radius:6px; font-weight:600; cursor:pointer;
+}

@@ -24,6 +24,7 @@ const Vivo = (() => {
     ultimaAlerta: new Map(), vueltaContada: 0, relator: null,
     suave: new Map(),           // num -> {x, y} interpolado para que no salte
     radios: [], radioDe: COLAPINTO, sonando: null, audio: null,
+    cola: [], bloqueado: false,
     avance: new Map(),          // num -> {hechos, t}: cuándo entró al microsector
     fraccion: new Map(),        // num -> última fracción de vuelta, para el cruce de meta
   };
@@ -266,10 +267,16 @@ const Vivo = (() => {
     const cont = raiz.querySelector(".radios");
     if (!cont) return;
     const lista = radiosFiltradas().slice(-6);
-    const firma = lista.map((r) => r.url).join("|") + "/" + S.sonando;
+    const firma = lista.map((r) => r.url).join("|") + "/" + S.sonando + "/" + S.bloqueado;
     if (cont.dataset.firma === firma) return;
     cont.dataset.firma = firma;
 
+    if (S.bloqueado) {
+      cont.innerHTML = `<button class="destrabar">🔈 Tocá para escuchar las radios</button>` +
+        cont.innerHTML;
+      cont.querySelector(".destrabar").onclick = destrabarAudio;
+      return;
+    }
     if (!lista.length) {
       cont.innerHTML = `<div class="vacio">Todavía no hay comunicaciones${
         S.radioDe ? " de " + esc(apellido(S.radioDe)) : ""}.</div>`;
@@ -286,31 +293,67 @@ const Vivo = (() => {
     });
   }
 
-  function reproducir(url) {
+  function reproducir(url, deCola) {
     if (!S.audio) S.audio = new Audio();
+    if (!deCola) S.cola = [];              // un clic manual manda: pisa la cola
     S.audio.src = url;
     S.sonando = url;
     // El relator no puede pisar la voz del piloto: si está hablando, se calla.
     if (S.relator?.activo?.()) { try { speechSynthesis.cancel(); } catch { /* ya */ } }
-    S.audio.onended = S.audio.onerror = () => { S.sonando = null; pintarRadios(); };
-    S.audio.play().catch(() => { S.sonando = null; });   // sin gesto previo, no deja
+    S.audio.onended = S.audio.onerror = () => {
+      S.sonando = null;
+      pintarRadios();
+      seguirCola();
+    };
+    S.audio.play().then(() => {
+      S.bloqueado = false;
+    }).catch(() => {
+      // Los navegadores no dejan sonar nada hasta que el usuario toca algo. En
+      // vez de tragarse el audio en silencio, se avisa y se deja a mano.
+      S.sonando = null;
+      S.bloqueado = true;
+      S.cola.unshift({ url });
+      pintarRadios();
+    });
     pintarRadios();
   }
 
-  /* Lo nuevo se pone solo. Es la gracia: no hay que estar mirando la lista. */
+  function seguirCola() {
+    if (S.sonando || !S.cola.length) return;
+    reproducir(S.cola.shift().url, true);
+  }
+
+  /* Lo nuevo se pone solo, y si entran dos juntas se encolan en vez de perderse
+     — que es lo que pasaba antes: mientras sonaba una, la siguiente se
+     descartaba. */
   function nuevasRadios(radios) {
     const antes = new Set(S.radios.map((r) => r.url));
     const nuevas = radios.filter((r) => !antes.has(r.url));
     S.radios = radios;
     if (!nuevas.length) return;
     const mias = S.radioDe ? nuevas.filter((r) => r.num === S.radioDe) : nuevas;
-    const auto = raiz.querySelector(".radio-solo")?.checked;
-    if (auto && mias.length && !S.sonando) reproducir(mias[mias.length - 1].url);
+    if (!mias.length || !raiz.querySelector(".radio-solo")?.checked) return;
+    // Sólo las tres últimas: si estuvo la pestaña de fondo un rato, no tiene
+    // sentido escuchar diez comunicaciones viejas seguidas.
+    S.cola.push(...mias.slice(-3));
+    seguirCola();
+  }
+
+  /* El primer gesto del usuario destraba el audio. Se aprovecha cualquiera:
+     un clic en la página, no hace falta que sea en el botón. */
+  function destrabarAudio() {
+    if (!S.bloqueado) return;
+    S.bloqueado = false;
+    seguirCola();
+    pintarRadios();
   }
 
   function montarRadio() {
     const sel = raiz.querySelector(".radio-piloto");
     if (!sel) return;
+    // Cualquier toque en la página sirve de gesto: no hay que cazar el botón.
+    S.onGesto = () => destrabarAudio();
+    document.addEventListener("pointerdown", S.onGesto);
     sel.onchange = () => {
       S.radioDe = Number(sel.value) || 0;
       try { localStorage.setItem("foruno.radio", String(S.radioDe)); } catch { /* privado */ }
@@ -709,7 +752,8 @@ const Vivo = (() => {
     if (S.onResize) window.removeEventListener("resize", S.onResize);
     if (S.relator) S.relator.parar();
     if (S.audio) { try { S.audio.pause(); } catch { /* ya */ } S.audio = null; }
-    S.sonando = null;
+    if (S.onGesto) document.removeEventListener("pointerdown", S.onGesto);
+    S.sonando = null; S.cola = [];
     raiz = null; ctx = null;
   }
 

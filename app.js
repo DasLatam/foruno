@@ -447,6 +447,35 @@ async function vistaVivo() {
   };
   Vivo.usarRelator(Relator);
 
+  const lleno = $(".btn-lleno");
+  const pintarLleno = () => {
+    const activo = document.body.classList.contains("lleno");
+    lleno.classList.toggle("activo", activo);
+    lleno.textContent = activo ? "⤡" : "⛶";
+    window.dispatchEvent(new Event("resize"));   // el canvas mide su contenedor
+  };
+  const alternarLleno = () => {
+    const quiere = !document.body.classList.contains("lleno");
+    document.body.classList.toggle("lleno", quiere);
+    // El modo del navegador es aparte: puede fallar (o negarse) y el modo
+    // compacto del sitio vale igual.
+    if (quiere) document.documentElement.requestFullscreen?.().catch(() => {});
+    else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    pintarLleno();
+  };
+  lleno.onclick = alternarLleno;
+  // Salir con Esc lo maneja el navegador: hay que enterarse para volver atrás.
+  app.onFS = () => {
+    if (!document.fullscreenElement) document.body.classList.remove("lleno");
+    pintarLleno();
+  };
+  document.addEventListener("fullscreenchange", app.onFS);
+  app.onTeclaVivo = (e) => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === "f" || e.key === "F") alternarLleno();
+  };
+  document.addEventListener("keydown", app.onTeclaVivo);
+
   Ajustes.montar($(".aj-menu"));
   // Apagar una columna cambia lo que hay que dibujar, así que se repinta al
   // toque en vez de esperar al próximo sondeo.
@@ -706,7 +735,12 @@ const RUTAS = [
 
 async function rutear() {
   if (app.visorActivo) { Visor.destruir(); app.visorActivo = false; }
-  if (app.vivoActivo) { Vivo.destruir(); app.vivoActivo = false; }
+  if (app.vivoActivo) {
+    Vivo.destruir(); app.vivoActivo = false;
+    document.body.classList.remove("lleno");
+    if (app.onFS) document.removeEventListener("fullscreenchange", app.onFS);
+    if (app.onTeclaVivo) document.removeEventListener("keydown", app.onTeclaVivo);
+  }
   clearInterval(app.timerCuenta);
   clearInterval(app.timerBanner);
   const h = location.hash || "#/calendario";
