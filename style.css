@@ -518,7 +518,15 @@ tr:hover td{background:var(--panel)}
 }
 
 /* ---------------- radio del equipo ---------------- */
-.radio-caja > summary{flex-wrap:wrap}
+/* Los mandos van adentro, no en el resumen: un <select> dentro de un <summary>
+   se come el clic y el panel no abre. */
+.rd-mandos{
+  display:flex; align-items:center; gap:8px; padding:0 10px 6px;
+}
+.rd-quien{
+  text-transform:none; letter-spacing:0; font-size:11px; color:var(--texto);
+  margin-left:auto;
+}
 .radio-piloto{
   font-size:11px; padding:2px 4px; background:var(--panel2); color:var(--texto);
   border:1px solid var(--borde); border-radius:5px; max-width:150px;
@@ -632,3 +640,26 @@ body.lleno .tabla-vivo .leyenda{display:none}
   width:100%; font-size:11px; padding:6px 8px; background:var(--acento);
   border:0; color:#fff; border-radius:6px; font-weight:600; cursor:pointer;
 }
+
+/* ---------------- cronología: audios y textos juntos ---------------- */
+.rd .txt{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  flex:1 1 auto;
+}
+.rd.texto{align-items:flex-start}
+.rd.texto .txt{white-space:normal; line-height:1.3}
+.rd .ico{font-size:10px; opacity:.6; flex:0 0 auto; width:16px; text-align:center}
+.rd.penal{border-left-color:#ff9600}
+.rd.azul{border-left-color:#3f7fd0}
+
+/* Las alertas sobre el circuito, que aparecen y se van. */
+.alerta.control{
+  border-left-color:var(--tenue); max-width:100%; white-space:normal;
+  line-height:1.35; font-weight:500;
+}
+.alerta.control.roja{border-left-color:var(--acento); background:rgba(60,10,10,.95)}
+.alerta.control.sc{border-left-color:#ff9600; background:rgba(60,36,4,.95)}
+.alerta.control.penal{border-left-color:#ff9600}
+.alerta.control.amarilla{border-left-color:var(--amarillo)}
+.alerta.control.verde{border-left-color:var(--verde)}
+.alertas{animation:none}

@@ -25,6 +25,7 @@ const Vivo = (() => {
     suave: new Map(),           // num -> {x, y} interpolado para que no salte
     radios: [], radioDe: COLAPINTO, sonando: null, audio: null,
     cola: [], bloqueado: false,
+    mensajes: [], msgVistos: new Set(),
     avance: new Map(),          // num -> {hechos, t}: cuándo entró al microsector
     fraccion: new Map(),        // num -> última fracción de vuelta, para el cruce de meta
   };
@@ -204,6 +205,33 @@ const Vivo = (() => {
     banda.innerHTML = `<b>${txt}</b>${sub ? `<span class="sub">${sub}</span>` : ""}`;
   }
 
+  /* Los avisos que aparecen sobre el circuito y se van solos. Es lo que uno
+     quiere de dirección de carrera: enterarse cuando pasa, no ir a buscarlo. */
+  function nuevosMensajes(mensajes) {
+    const primera = !S.mensajes.length;
+    const nuevos = [];
+    for (const m of mensajes) {
+      const clave = m.utc + "|" + m.texto;
+      if (S.msgVistos.has(clave)) continue;
+      S.msgVistos.add(clave);
+      if (!primera) nuevos.push(m);        // al entrar no se escupe el historial
+    }
+    S.mensajes = mensajes;
+    if (!nuevos.length) return;
+    const cont = raiz.querySelector(".alertas");
+    if (!cont) return;
+    for (const m of nuevos.filter(importante)) {
+      const d = document.createElement("div");
+      d.className = "alerta control " + claseMensaje(m);
+      d.textContent = limpiar(m.texto);
+      cont.prepend(d);
+      // Las de dirección de carrera duran más: suelen ser una frase entera y
+      // una bandera roja no se lee en tres segundos.
+      setTimeout(() => d.remove(), 14000);
+    }
+    while (cont.children.length > 6) cont.lastChild.remove();
+  }
+
   function pintarControl(mensajes) {
     const cont = raiz.querySelector(".control-carrera");
     if (!cont || !mensajes) return;
@@ -257,40 +285,98 @@ const Vivo = (() => {
         `<option value="${n}">${esc(apellido(n))} #${n}</option>`).join("");
       sel.value = String(S.radioDe);
     }
+    const quien = raiz.querySelector(".rd-quien");
+    if (quien) {
+      quien.textContent = S.radioDe ? apellido(S.radioDe) : "todos";
+    }
   }
 
-  function radiosFiltradas() {
-    return S.radioDe ? S.radios.filter((r) => r.num === S.radioDe) : S.radios;
+  /* Todo lo que le pasó a un piloto, en orden: lo que dijo por radio y lo que
+     le dijo dirección de carrera. Separado no se entiende — una investigación
+     y la respuesta del piloto son la misma historia. */
+  function cronologia() {
+    // Las azules quedan afuera: en una carrera son decenas y taparían las tres
+    // cosas que de verdad le pasaron al piloto. Están enteras en el registro
+    // de dirección de carrera, que para eso existe.
+    const items = [
+      ...S.radios.map((r) => ({ ...r, tipo: "audio" })),
+      ...S.mensajes.filter(importante).map((m) => ({ ...m, tipo: "texto" })),
+    ];
+    const filtrados = S.radioDe
+      ? items.filter((x) => x.num === S.radioDe)
+      : items;
+    return filtrados.sort((a, b) => String(a.utc).localeCompare(String(b.utc)));
+  }
+
+  /* Las banderas azules son casi todo el volumen —un doblaje cualquiera dispara
+     una— y no cambian nada de la carrera. Lo mismo el "clear" de cada sector.
+     Van al registro, no a la cara del que mira. */
+  function importante(m) {
+    if (m.bandera === "BLUE") return false;
+    if (/^CLEAR IN TRACK SECTOR/i.test(m.texto || "")) return false;
+    return true;
   }
 
   function pintarRadios() {
     const cont = raiz.querySelector(".radios");
     if (!cont) return;
-    const lista = radiosFiltradas().slice(-6);
-    const firma = lista.map((r) => r.url).join("|") + "/" + S.sonando + "/" + S.bloqueado;
+    const lista = cronologia().slice(-8);
+    const firma = lista.map((x) => x.url || x.utc + x.texto).join("|") +
+                  "/" + S.sonando + "/" + S.bloqueado;
     if (cont.dataset.firma === firma) return;
     cont.dataset.firma = firma;
 
-    if (S.bloqueado) {
-      cont.innerHTML = `<button class="destrabar">🔈 Tocá para escuchar las radios</button>` +
-        cont.innerHTML;
-      cont.querySelector(".destrabar").onclick = destrabarAudio;
-      return;
-    }
+    const trabado = S.bloqueado
+      ? `<button class="destrabar">🔈 Tocá para escuchar las radios</button>` : "";
+
     if (!lista.length) {
-      cont.innerHTML = `<div class="vacio">Todavía no hay comunicaciones${
+      cont.innerHTML = trabado + `<div class="vacio">Todavía no hay nada${
         S.radioDe ? " de " + esc(apellido(S.radioDe)) : ""}.</div>`;
-      return;
+    } else {
+      cont.innerHTML = trabado + lista.map((x) => {
+        const h = (x.utc || "").slice(11, 16);
+        const quien = x.num ? `<span class="cod">${esc(apellido(x.num))}</span>` : "";
+        if (x.tipo === "audio") {
+          return `<div class="rd ${x.url === S.sonando ? "sonando" : ""}">
+            <button data-url="${esc(x.url)}" title="Escuchar">▶</button>
+            <span class="hora">${h}</span>${quien}
+            <span class="txt">radio</span></div>`;
+        }
+        return `<div class="rd texto ${claseMensaje(x)}">
+          <span class="ico" title="Dirección de carrera">📋</span>
+          <span class="hora">${h}</span>${quien}
+          <span class="txt">${esc(limpiar(x.texto))}</span></div>`;
+      }).join("");
     }
-    cont.innerHTML = lista.map((r) => `
-      <div class="rd ${r.url === S.sonando ? "sonando" : ""}">
-        <button data-url="${esc(r.url)}" title="Escuchar">▶</button>
-        <span class="hora">${(r.utc || "").slice(11, 16)}</span>
-        <span class="cod">${esc(apellido(r.num))}</span>
-      </div>`).join("");
     cont.querySelectorAll("button[data-url]").forEach((b) => {
       b.onclick = () => reproducir(b.dataset.url);
     });
+    const db = cont.querySelector(".destrabar");
+    if (db) db.onclick = destrabarAudio;
+  }
+
+  /* El aviso trae el número y el código del auto, que ya están en la fila, y la
+     hora del circuito repetida al final. Sacarlos deja el texto legible. */
+  function limpiar(t) {
+    return String(t || "")
+      .replace(/\s*TIMED AT \d{1,2}:\d{2}:\d{2}\s*/i, " ")
+      .replace(/\s*\(?\b\d{1,2}:\d{2}:\d{2}\)?\s*$/g, "")
+      .replace(/\s*\(\d{1,2}:\d{2}:\d{2}\)\s*/g, " ")
+      .replace(/\bCAR \d+ \(([A-Z]{3})\)/g, "$1")
+      .replace(/^FIA STEWARDS:\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function claseMensaje(m) {
+    const t = (m.texto || "").toUpperCase();
+    if (/RED FLAG/.test(t) || m.bandera === "RED") return "roja";
+    if (/SAFETY CAR/.test(t)) return "sc";
+    if (/PENALTY|INVESTIGAT|DELETED|BLACK/.test(t)) return "penal";
+    if (/YELLOW/.test(t) || m.bandera === "DOUBLE YELLOW") return "amarilla";
+    if (/CLEAR|GREEN|CHEQUERED/.test(t)) return "verde";
+    if (m.bandera === "BLUE") return "azul";
+    return "";
   }
 
   function reproducir(url, deCola) {
@@ -357,6 +443,7 @@ const Vivo = (() => {
     sel.onchange = () => {
       S.radioDe = Number(sel.value) || 0;
       try { localStorage.setItem("foruno.radio", String(S.radioDe)); } catch { /* privado */ }
+      pintarSelector();
       pintarRadios();
     };
   }
@@ -670,7 +757,7 @@ const Vivo = (() => {
     for (const e of ev) {
       if (!texto[e.tipo]) continue;
       const d = document.createElement("div");
-      d.className = "alerta " + e.tipo;
+      d.className = "alerta pista " + e.tipo;
       d.textContent = texto[e.tipo](e);
       cont.prepend(d);
       setTimeout(() => d.remove(), 9000);
@@ -696,8 +783,10 @@ const Vivo = (() => {
       if (S.relator) S.relator.procesar(ev, S.pilotos);
       raiz.querySelector(".estado-vivo").textContent = rotulo(d.estadoSesion);
       pintarEstado(d);
+      if (d.mensajes) nuevosMensajes(d.mensajes);
       pintarControl(d.mensajes);
-      if (d.radios) { nuevasRadios(d.radios); pintarSelector(); pintarRadios(); }
+      if (d.radios) { nuevasRadios(d.radios); pintarSelector(); }
+      pintarRadios();
       const err = raiz.querySelector(".error-vivo");
       if (err) err.textContent = "";
     } catch (e) {
@@ -736,6 +825,8 @@ const Vivo = (() => {
       if (g != null) S.radioDe = Number(g) || 0;
     } catch { /* modo privado */ }
     S.radios = d.radios || [];
+    S.msgVistos.clear();
+    nuevosMensajes(d.mensajes || []);
     montarRadio();
     pintarSelector();
     pintarRadios();

@@ -140,7 +140,7 @@ function aplicar(topic, contenido) {
         S.vistos.add(clave);
         S.mensajes.push(m);
       }
-      S.mensajes = S.mensajes.slice(-60);
+      S.mensajes = S.mensajes.slice(-400);
       break;
     }
     case "TimingAppData":
@@ -228,6 +228,17 @@ async function asegurar() {
 }
 
 /* ------------------------------------------------------------ salida */
+
+const RUIDO = (m) => m.Flag === "BLUE" ||
+                     /^CLEAR IN TRACK SECTOR/i.test(m.Message || "");
+
+function mensajesUtiles() {
+  const utiles = S.mensajes.filter((m) => !RUIDO(m)).slice(-70);
+  const recientes = S.mensajes.slice(-15);
+  const vistos = new Set(utiles.map((m) => m.Utc + m.Message));
+  const salida = utiles.concat(recientes.filter((m) => !vistos.has(m.Utc + m.Message)));
+  return salida.sort((a, b) => String(a.Utc).localeCompare(String(b.Utc)));
+}
 
 /* El neumático que lleva puesto y cuántas veces paró.
  *
@@ -343,9 +354,16 @@ module.exports = async (req, res) => {
       reloj: S.reloj || null,
       // Los últimos avisos de dirección de carrera: banderas, safety car,
       // investigaciones. Es lo que explica por qué la carrera está parada.
-      mensajes: S.mensajes.slice(-12).map((m) => ({
+      // Qué mensajes se mandan. Las banderas azules son el 80 % del volumen y no
+      // cambian nada: se manda la historia útil entera y, aparte, las últimas
+      // de cualquier tipo para que el registro completo tenga algo reciente.
+      mensajes: mensajesUtiles().map((m) => ({
         utc: m.Utc, cat: m.Category, texto: m.Message,
         bandera: m.Flag || null, alcance: m.Scope || null, sector: m.Sector ?? null,
+        // A quién le habla. La F1 lo manda en RacingNumber cuando el aviso es
+        // para un piloto; si no viene, sale del propio texto ("CAR 43 (COL)").
+        num: Number(m.RacingNumber) ||
+             Number((/\bCAR (\d+)\b/.exec(m.Message || "") || [])[1]) || null,
       })),
       radios: S.radios.slice(-40).map((c) => ({
         utc: c.Utc, num: Number(c.RacingNumber),
