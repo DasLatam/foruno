@@ -22,6 +22,8 @@ const Vivo = (() => {
     track: null, vista: null, corriendo: false,
     ultimaAlerta: new Map(), vueltaContada: 0, relator: null,
     suave: new Map(),           // num -> {x, y} interpolado para que no salte
+    avance: new Map(),          // num -> {hechos, t}: cuándo entró al microsector
+    fraccion: new Map(),        // num -> última fracción de vuelta, para el cruce de meta
   };
 
   /* ------------------------------------------------------------ formato */
@@ -214,6 +216,11 @@ const Vivo = (() => {
       const h = (m.utc || "").slice(11, 16);
       return `<div class="cc ${clase(m)}"><b>${h}</b>${esc(m.texto || "")}</div>`;
     }).join("");
+    // Plegado, el resumen muestra el último aviso: que se pueda cerrar la caja
+    // sin perderse que acaba de salir una bandera.
+    const resumen = raiz.querySelector(".cc-ultimo");
+    const u = ult[ult.length - 1];
+    if (resumen && u) resumen.textContent = "· " + (u.texto || "");
   }
 
   const esc = (t) => String(t).replace(/[<>&]/g, (c) =>
@@ -290,11 +297,27 @@ const Vivo = (() => {
      los tramos ya cubiertos sale en qué punto del giro está, y eso alcanza para
      dibujarlo sobre el trazado. Es aproximado y hay que decirlo: la resolución
      es de un tramo, unos pocos segundos de pista. */
-  function fraccionDeVuelta(p) {
+  function fraccionDeVuelta(num, p) {
     const segs = (p.sectores || []).flatMap((x) => x.segs || []);
     if (!segs.length) return null;
+    const n = segs.length;
     const hechos = segs.filter((g) => g).length;
-    return Math.min(1, hechos / segs.length);
+
+    // Contar tramos y nada más deja al auto quieto tres segundos y de golpe un
+    // salto. Se interpola dentro del tramo en curso con el reloj: se sabe
+    // cuándo entró y cuánto dura, así que el movimiento sale continuo.
+    let a = S.avance.get(num);
+    if (!a || a.hechos !== hechos) { a = { hechos, t: Date.now() }; S.avance.set(num, a); }
+
+    // La vuelta anterior puede ser cualquier cosa (una parada en boxes, una
+    // bandera roja de media hora), así que se acota a algo verosímil.
+    const bruta = mm(p.mejorVuelta) || mm(p.ultimaVuelta) || 90;
+    const vuelta = Math.max(50, Math.min(180, bruta));
+    const dur = (vuelta * 1000) / n;
+    // Nunca llega a 1: si el dato se atrasa, mejor quedarse corto que pasarse
+    // de largo y tener que volver el auto para atrás.
+    const dentro = Math.min(0.9, (Date.now() - a.t) / dur);
+    return Math.min(1, (hechos + dentro) / n);
   }
 
   /* Longitud acumulada del trazado, para poder pedir "el punto al 37 % de la
@@ -379,21 +402,23 @@ const Vivo = (() => {
       const f = filas[i];
       if (f.abandono) continue;
       // Con GPS se usa el GPS; sin GPS, el microsector.
-      let punto = f.xy;
+      let punto = f.xy, saltar = false;
       if (!punto) {
-        const fr = fraccionDeVuelta(f);
+        const fr = fraccionDeVuelta(f.num, f);
         if (fr == null) continue;
+        // Al cruzar meta la fracción vuelve a cero: sin esto el auto cruzaría
+        // el circuito al revés, en diagonal, hasta la largada.
+        const ant = S.fraccion.get(f.num);
+        if (ant != null && fr < ant - 0.5) saltar = true;
+        S.fraccion.set(f.num, fr);
         punto = puntoEn(fr);
         if (!punto) continue;
       }
       // Suavizado: los datos llegan de a saltos y sin esto los autos brincan.
       let s = S.suave.get(f.num);
-      if (!s) { s = { x: punto.x, y: punto.y }; S.suave.set(f.num, s); }
-      // Sin GPS la posición salta de microsector en microsector (unos segundos
-      // cada uno), así que el suavizado va más lento y disimula el escalón.
-      const k = f.xy ? 0.18 : 0.05;
-      s.x += (punto.x - s.x) * k;
-      s.y += (punto.y - s.y) * k;
+      if (!s || saltar) { s = { x: punto.x, y: punto.y }; S.suave.set(f.num, s); }
+      s.x += (punto.x - s.x) * 0.18;
+      s.y += (punto.y - s.y) * 0.18;
 
       const cx = v.px(s.x), cy = v.py(s.y);
       const d = ficha(f.num);
@@ -487,6 +512,8 @@ const Vivo = (() => {
     S.vueltaContada = 0;
     S.ultimaAlerta.clear();
     S.suave.clear();
+    S.avance.clear();
+    S.fraccion.clear();
 
     const d = await traer(true);
     S.t = d.t; S.p = d.p; S.pilotos = d.pilotos;

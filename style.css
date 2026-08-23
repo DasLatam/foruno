@@ -481,11 +481,24 @@ tr:hover td{background:var(--panel)}
 .banda-pista.verde{background:rgba(0,170,90,.9); color:#fff}
 @keyframes latir{50%{opacity:.72}}
 
-/* Los avisos de dirección de carrera, abajo a la izquierda. */
+/* Los avisos de dirección de carrera, al pie de la tabla. Estaban encima del
+   circuito y tapaban justo la parte que hay que mirar. */
+.cc-caja{
+  flex:0 0 auto; border-top:1px solid var(--borde); background:var(--panel);
+}
+.cc-caja > summary{
+  padding:7px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--tenue); cursor:pointer; display:flex; gap:8px; align-items:baseline;
+}
+.cc-caja > summary::marker{color:var(--tenue)}
+.cc-ultimo{
+  text-transform:none; letter-spacing:0; font-size:11px; color:var(--texto);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+}
+.cc-caja[open] .cc-ultimo{display:none}
 .control-carrera{
-  position:absolute; left:14px; bottom:14px; width:min(360px,46%);
-  display:flex; flex-direction:column-reverse; gap:4px; z-index:2;
-  pointer-events:none;
+  display:flex; flex-direction:column-reverse; gap:4px;
+  max-height:132px; overflow-y:auto; padding:0 10px 10px;
 }
 .cc{
   background:rgba(11,14,19,.88); border:1px solid var(--borde); border-radius:6px;
@@ -499,6 +512,6 @@ tr:hover td{background:var(--panel)}
 .cc.verde{border-left-color:var(--verde)}
 .cc.sc{border-left-color:#ff9600}
 @media (max-width:900px){
-  .control-carrera{width:auto; right:14px}
+  .control-carrera{max-height:96px}
   .marcador{margin-left:0}
 }
