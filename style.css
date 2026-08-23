@@ -457,3 +457,48 @@ tr:hover td{background:var(--panel)}
   border-color:rgba(255,176,0,.4);
 }
 .banner-vivo.corriendo .bv-txt em{color:#e8b45a}
+
+/* ---------------- estado de carrera ---------------- */
+.marcador{
+  display:flex; align-items:baseline; gap:8px; margin-left:auto; flex:0 0 auto;
+  font-variant-numeric:tabular-nums;
+}
+.mk-vuelta{font-size:14px; font-weight:700}
+.mk-reloj{font-size:12px; color:var(--tenue)}
+
+/* La banda que explica por qué la carrera no está corriendo normal. */
+.banda-pista{
+  position:absolute; top:0; left:0; right:0; padding:9px 16px;
+  font-size:13px; font-weight:700; letter-spacing:.4px; text-align:center;
+  display:none; z-index:2;
+}
+.banda-pista.visible{display:block}
+.banda-pista b{font-weight:800; letter-spacing:1px}
+.banda-pista .sub{display:block; font-weight:500; font-size:12px; opacity:.9; letter-spacing:0}
+.banda-pista.roja{background:rgba(225,6,0,.92); color:#fff; animation:latir 1.4s infinite}
+.banda-pista.amarilla{background:rgba(255,196,0,.92); color:#221a00}
+.banda-pista.sc{background:rgba(255,150,0,.92); color:#231400}
+.banda-pista.verde{background:rgba(0,170,90,.9); color:#fff}
+@keyframes latir{50%{opacity:.72}}
+
+/* Los avisos de dirección de carrera, abajo a la izquierda. */
+.control-carrera{
+  position:absolute; left:14px; bottom:14px; width:min(360px,46%);
+  display:flex; flex-direction:column-reverse; gap:4px; z-index:2;
+  pointer-events:none;
+}
+.cc{
+  background:rgba(11,14,19,.88); border:1px solid var(--borde); border-radius:6px;
+  padding:5px 9px; font-size:11px; line-height:1.35; color:var(--tenue);
+  border-left-width:3px;
+}
+.cc b{color:var(--texto); font-weight:600; margin-right:5px;
+      font-variant-numeric:tabular-nums; font-size:10px}
+.cc.roja{border-left-color:var(--acento)}
+.cc.amarilla{border-left-color:var(--amarillo)}
+.cc.verde{border-left-color:var(--verde)}
+.cc.sc{border-left-color:#ff9600}
+@media (max-width:900px){
+  .control-carrera{width:auto; right:14px}
+  .marcador{margin-left:0}
+}

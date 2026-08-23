@@ -133,6 +133,92 @@ const Vivo = (() => {
                     ends: "terminada", finalised: "resultado oficial" };
   const rotulo = (e) => ROTULOS[String(e || "").toLowerCase()] || "previa";
 
+  /* ------------------------------------------ estado de carrera */
+
+  /* TrackStatus: el número es lo que manda, el texto varía. */
+  const PISTA = {
+    "1": ["verde", "PISTA LIBRE"],
+    "2": ["amarilla", "BANDERA AMARILLA"],
+    "4": ["sc", "SAFETY CAR"],
+    "5": ["roja", "BANDERA ROJA"],
+    "6": ["sc", "VIRTUAL SAFETY CAR"],
+    "7": ["sc", "TERMINA EL VIRTUAL SAFETY CAR"],
+  };
+
+  /* La hora de reanudación viene en los avisos de dirección de carrera, y en
+     hora del circuito. Traducirla a la del que mira evita la cuenta mental. */
+  function horaReanudacion(mensajes, gmt) {
+    for (let i = mensajes.length - 1; i >= 0; i--) {
+      const m = /RACE WILL RESUME AT (\d{1,2}:\d{2})/i.exec(mensajes[i].texto || "");
+      if (!m) continue;
+      const [hh, mm] = m[1].split(":").map(Number);
+      const off = /^(-)?(\d+):(\d+)/.exec(gmt || "00:00:00");
+      const seg = off ? (off[1] ? -1 : 1) * (+off[2] * 3600 + +off[3] * 60) : 0;
+      // Se arma sobre el día de hoy en el huso del circuito y se pasa a local.
+      const hoy = new Date();
+      const base = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate(),
+                            hh, mm) - seg * 1000;
+      return { texto: m[1], local: new Date(base) };
+    }
+    return null;
+  }
+
+  function pintarEstado(d) {
+    const v = d.vueltas || {}, r = d.reloj || {};
+    const mk = raiz.querySelector(".mk-vuelta");
+    if (mk) {
+      mk.textContent = v.CurrentLap
+        ? `VUELTA ${v.CurrentLap}${v.TotalLaps ? " / " + v.TotalLaps : ""}` : "";
+      raiz.querySelector(".mk-reloj").textContent = r.Remaining
+        ? "restan " + r.Remaining : "";
+    }
+
+    const banda = raiz.querySelector(".banda-pista");
+    if (!banda) return;
+    const estado = String(d.estadoSesion || "").toLowerCase();
+    let [cls, txt] = PISTA[String(d.pista?.Status ?? "")] || ["", ""];
+    // La bandera roja la marca SessionStatus, no siempre TrackStatus.
+    if (estado === "aborted") [cls, txt] = ["roja", "BANDERA ROJA"];
+    if (estado === "finished" || estado === "ends") [cls, txt] = ["verde", "BANDERA A CUADROS"];
+
+    // Con pista libre no hay nada que explicar: la banda tapa el circuito.
+    if (!txt || cls === "verde" && estado !== "finished" && estado !== "ends") {
+      banda.className = "banda-pista";
+      return;
+    }
+    const re = horaReanudacion(d.mensajes || [], S.gmt);
+    const sub = re
+      ? `se reanuda a las ${re.local.toLocaleTimeString("es-AR",
+          { hour: "2-digit", minute: "2-digit" })} (${re.texto} en el circuito)`
+      : "";
+    banda.className = "banda-pista visible " + cls;
+    banda.innerHTML = `<b>${txt}</b>${sub ? `<span class="sub">${sub}</span>` : ""}`;
+  }
+
+  function pintarControl(mensajes) {
+    const cont = raiz.querySelector(".control-carrera");
+    if (!cont || !mensajes) return;
+    const clase = (m) => {
+      const t = (m.texto || "").toUpperCase();
+      if (/RED FLAG/.test(t) || m.bandera === "RED") return "roja";
+      if (/SAFETY CAR/.test(t)) return "sc";
+      if (/YELLOW/.test(t) || m.bandera === "DOUBLE YELLOW") return "amarilla";
+      if (/CLEAR|GREEN/.test(t)) return "verde";
+      return "";
+    };
+    const ult = mensajes.slice(-5);
+    const firma = ult.map((m) => m.utc).join("|");
+    if (cont.dataset.firma === firma) return;
+    cont.dataset.firma = firma;
+    cont.innerHTML = ult.map((m) => {
+      const h = (m.utc || "").slice(11, 16);
+      return `<div class="cc ${clase(m)}"><b>${h}</b>${esc(m.texto || "")}</div>`;
+    }).join("");
+  }
+
+  const esc = (t) => String(t).replace(/[<>&]/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+
   /* ------------------------------------------------------------ tabla */
 
   function ordenados() {
@@ -196,6 +282,52 @@ const Vivo = (() => {
     });
   }
 
+  /* --------------------------------------- ubicar sin GPS */
+
+  /* La F1 no manda `Position.z` (las coordenadas GPS) sin autenticación: se
+     suscribe uno y el servidor simplemente lo omite. Pero sí manda, vuelta a
+     vuelta, en qué microsector va cada auto — 24 tramos por vuelta. Contando
+     los tramos ya cubiertos sale en qué punto del giro está, y eso alcanza para
+     dibujarlo sobre el trazado. Es aproximado y hay que decirlo: la resolución
+     es de un tramo, unos pocos segundos de pista. */
+  function fraccionDeVuelta(p) {
+    const segs = (p.sectores || []).flatMap((x) => x.segs || []);
+    if (!segs.length) return null;
+    const hechos = segs.filter((g) => g).length;
+    return Math.min(1, hechos / segs.length);
+  }
+
+  /* Longitud acumulada del trazado, para poder pedir "el punto al 37 % de la
+     vuelta" en vez de "el punto número 100": los puntos no están repartidos
+     parejo y el auto avanzaría a saltos. */
+  function medirTrazado() {
+    const t = S.track;
+    if (!t || t.length < 2) { S.largo = null; return; }
+    const acum = [0];
+    for (let i = 1; i < t.length; i++) {
+      const dx = t[i][0] - t[i - 1][0], dy = t[i][1] - t[i - 1][1];
+      acum.push(acum[i - 1] + Math.hypot(dx, dy));
+    }
+    S.largo = acum;
+  }
+
+  function puntoEn(f) {
+    const t = S.track, acum = S.largo;
+    if (!t || !acum) return null;
+    const total = acum[acum.length - 1];
+    const meta = Math.max(0, Math.min(1, f)) * total;
+    let lo = 0, hi = acum.length - 1;
+    while (lo < hi) {                       // búsqueda binaria sobre el acumulado
+      const med = (lo + hi) >> 1;
+      if (acum[med] < meta) lo = med + 1; else hi = med;
+    }
+    const i = Math.max(1, lo);
+    const tramo = acum[i] - acum[i - 1] || 1;
+    const k = (meta - acum[i - 1]) / tramo;
+    return { x: t[i - 1][0] + (t[i][0] - t[i - 1][0]) * k,
+             y: t[i - 1][1] + (t[i][1] - t[i - 1][1]) * k };
+  }
+
   /* ------------------------------------------------------------ mapa */
 
   function redimensionar() {
@@ -207,6 +339,7 @@ const Vivo = (() => {
     ctx = cv.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!S.track || !S.track.length) { S.vista = null; return; }
+    if (!S.largo) medirTrazado();
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const [x, y] of S.track) {
       if (x < x0) x0 = x; if (x > x1) x1 = x;
@@ -244,12 +377,23 @@ const Vivo = (() => {
     const filas = ordenados();
     for (let i = filas.length - 1; i >= 0; i--) {
       const f = filas[i];
-      if (!f.xy || f.abandono) continue;
+      if (f.abandono) continue;
+      // Con GPS se usa el GPS; sin GPS, el microsector.
+      let punto = f.xy;
+      if (!punto) {
+        const fr = fraccionDeVuelta(f);
+        if (fr == null) continue;
+        punto = puntoEn(fr);
+        if (!punto) continue;
+      }
       // Suavizado: los datos llegan de a saltos y sin esto los autos brincan.
       let s = S.suave.get(f.num);
-      if (!s) { s = { x: f.xy.x, y: f.xy.y }; S.suave.set(f.num, s); }
-      s.x += (f.xy.x - s.x) * 0.18;
-      s.y += (f.xy.y - s.y) * 0.18;
+      if (!s) { s = { x: punto.x, y: punto.y }; S.suave.set(f.num, s); }
+      // Sin GPS la posición salta de microsector en microsector (unos segundos
+      // cada uno), así que el suavizado va más lento y disimula el escalón.
+      const k = f.xy ? 0.18 : 0.05;
+      s.x += (punto.x - s.x) * k;
+      s.y += (punto.y - s.y) * k;
 
       const cx = v.px(s.x), cy = v.py(s.y);
       const d = ficha(f.num);
@@ -321,6 +465,8 @@ const Vivo = (() => {
       avisar(ev);
       if (S.relator) S.relator.procesar(ev, S.pilotos);
       raiz.querySelector(".estado-vivo").textContent = rotulo(d.estadoSesion);
+      pintarEstado(d);
+      pintarControl(d.mensajes);
       const err = raiz.querySelector(".error-vivo");
       if (err) err.textContent = "";
     } catch (e) {
@@ -335,6 +481,8 @@ const Vivo = (() => {
     raiz = contenedor;
     S.path = info.path;
     S.track = circuitos[info.sesion.circuito] || null;
+    S.gmt = info.sesion.gmt || "00:00:00";
+    S.largo = null;
     S.corriendo = true;
     S.vueltaContada = 0;
     S.ultimaAlerta.clear();
@@ -348,6 +496,8 @@ const Vivo = (() => {
 
     redimensionar();
     pintarTabla();
+    pintarEstado(d);
+    pintarControl(d.mensajes);
     dibujar();
     S.onResize = () => { redimensionar(); };
     window.addEventListener("resize", S.onResize);

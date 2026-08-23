@@ -34,7 +34,8 @@ const UA = { "User-Agent": "BestHTTP" };
 // Lo mínimo para el visor. Pedir de más es tráfico que después hay que tirar.
 const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "DriverList",
                 "TimingData", "Position.z", "TrackStatus", "LapCount",
-                "RaceControlMessages"];
+                "RaceControlMessages", "SessionData", "ExtrapolatedClock",
+                "TimingAppData"];
 
 /* ------------------------------------------------------------ estado */
 
@@ -48,10 +49,12 @@ const S = {
   estado: null,             // SessionStatus.Status
   pista: null,              // TrackStatus
   vuelta: null,             // LapCount
+  reloj: null,              // ExtrapolatedClock: cuánto falta para el final
   pilotos: {},              // DriverList
   lineas: {},               // TimingData.Lines acumulado
   xy: {},                   // Position.z decodificado, último punto por auto
   mensajes: [],             // RaceControlMessages
+  vistos: new Set(),        // claves de mensajes ya guardados, para no duplicar
 };
 
 /* Los deltas de la F1 actualizan una lista mandando un objeto indexado:
@@ -114,6 +117,8 @@ function aplicar(topic, contenido) {
     case "TrackStatus": S.pista = contenido; break;
     case "LapCount":
       S.vuelta = { ...(S.vuelta || {}), ...contenido }; break;
+    case "ExtrapolatedClock":
+      S.reloj = { ...(S.reloj || {}), ...contenido }; break;
     case "DriverList":
       if (contenido && typeof contenido === "object") fundir(S.pilotos, contenido);
       break;
@@ -123,8 +128,15 @@ function aplicar(topic, contenido) {
     case "Position.z":
       posiciones(contenido); break;
     case "RaceControlMessages": {
-      const ms = comoLista(contenido?.Messages);
-      if (ms.length) S.mensajes = S.mensajes.concat(ms).slice(-40);
+      // El estado inicial trae la tanda entera y los deltas de a uno. Se
+      // deduplica por hora+texto porque llega repetido al reconectar.
+      for (const m of comoLista(contenido?.Messages)) {
+        const clave = (m.Utc || "") + "|" + (m.Message || "");
+        if (S.vistos.has(clave)) continue;
+        S.vistos.add(clave);
+        S.mensajes.push(m);
+      }
+      S.mensajes = S.mensajes.slice(-60);
       break;
     }
     default: break;                                   // Heartbeat y demás
@@ -261,6 +273,7 @@ function descubrir() {
     archivo: si.ArchiveStatus?.Status ?? null,
     pista: S.pista || null,
     vueltas: S.vuelta || null,
+    reloj: S.reloj || null,
   };
 }
 
@@ -289,6 +302,13 @@ module.exports = async (req, res) => {
       estadoSesion: S.estado,
       pista: S.pista || null,
       vueltas: S.vuelta || null,
+      reloj: S.reloj || null,
+      // Los últimos avisos de dirección de carrera: banderas, safety car,
+      // investigaciones. Es lo que explica por qué la carrera está parada.
+      mensajes: S.mensajes.slice(-12).map((m) => ({
+        utc: m.Utc, cat: m.Category, texto: m.Message,
+        bandera: m.Flag || null, alcance: m.Scope || null, sector: m.Sector ?? null,
+      })),
       t: 0, p: 0,
       ts: new Date(S.ultimo).toISOString(),
     });
