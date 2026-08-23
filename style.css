@@ -515,3 +515,31 @@ tr:hover td{background:var(--panel)}
   .control-carrera{max-height:96px}
   .marcador{margin-left:0}
 }
+
+/* ---------------- radio del equipo ---------------- */
+.radio-caja > summary{flex-wrap:wrap}
+.radio-piloto{
+  font-size:11px; padding:2px 4px; background:var(--panel2); color:var(--texto);
+  border:1px solid var(--borde); border-radius:5px; max-width:150px;
+}
+.radio-auto{
+  display:inline-flex; align-items:center; gap:4px; text-transform:none;
+  letter-spacing:0; font-size:11px; margin-left:auto;
+}
+.radios{
+  display:flex; flex-direction:column-reverse; gap:4px;
+  max-height:132px; overflow-y:auto; padding:0 10px 10px;
+}
+.rd{
+  display:flex; align-items:center; gap:8px; font-size:11px; color:var(--tenue);
+  background:rgba(11,14,19,.6); border:1px solid var(--borde); border-radius:6px;
+  padding:4px 8px; border-left:3px solid var(--borde);
+}
+.rd.sonando{border-left-color:var(--acento); color:var(--texto)}
+.rd button{
+  font-size:12px; padding:1px 7px; line-height:1.4; flex:0 0 auto;
+  background:var(--panel2); border:1px solid var(--borde); border-radius:5px;
+}
+.rd .hora{font-variant-numeric:tabular-nums; font-size:10px}
+.rd .cod{font-weight:700; color:var(--texto)}
+.radios .vacio{color:var(--tenue); font-size:11px; padding:4px 0}

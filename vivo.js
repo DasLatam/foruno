@@ -15,6 +15,7 @@ const Vivo = (() => {
   const POLL_MS = 3000;
   const CERCA = 0.3;            // segundos: umbral de "se lo va a comer"
   const REPETIR_ALERTA = 25000; // no repetir la misma alerta antes de esto
+  const COLAPINTO = 43;         // a quién se escucha por defecto
 
   let raiz = null, ctx = null, timer = 0, raf = 0;
   const S = {
@@ -22,6 +23,7 @@ const Vivo = (() => {
     track: null, vista: null, corriendo: false,
     ultimaAlerta: new Map(), vueltaContada: 0, relator: null,
     suave: new Map(),           // num -> {x, y} interpolado para que no salte
+    radios: [], radioDe: COLAPINTO, sonando: null, audio: null,
     avance: new Map(),          // num -> {hechos, t}: cuándo entró al microsector
     fraccion: new Map(),        // num -> última fracción de vuelta, para el cruce de meta
   };
@@ -100,7 +102,8 @@ const Vivo = (() => {
 
       // A tiro: dentro de CERCA del de adelante y sin haber avisado hace poco
       const iv = seg(p.intervalo);
-      if (iv != null && iv > 0 && iv <= CERCA && p.pos > 1 && !p.boxes) {
+      if (iv != null && iv > 0 && iv <= CERCA && p.pos > 1 && !p.boxes &&
+          !p.abandono && !p.detenido) {
         const adelante = Object.entries(ahora).find(([, q]) => q.pos === p.pos - 1);
         const clave = num + "-" + (adelante ? adelante[0] : "?");
         const t = Date.now();
@@ -226,6 +229,92 @@ const Vivo = (() => {
   const esc = (t) => String(t).replace(/[<>&]/g, (c) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 
+  /* ------------------------------------------ radio del equipo */
+
+  /* Las comunicaciones piloto-equipo son mp3 servidos bajo el directorio de la
+     sesión. A diferencia de los .jsonStream, éstos se descargan mientras la
+     carrera corre, así que se pueden escuchar en el momento y sin proxy: un
+     <audio> no necesita CORS para reproducir. */
+  function pilotosConRadio() {
+    const nums = new Set(S.radios.map((r) => r.num));
+    return [...nums].sort((a, b) => apellido(a).localeCompare(apellido(b)));
+  }
+
+  function pintarSelector() {
+    const sel = raiz.querySelector(".radio-piloto");
+    if (!sel) return;
+    // Todos los de la sesión, no sólo los que ya hablaron: si no, elegir a
+    // Colapinto es imposible hasta que hable, que es justo lo que se espera.
+    const nums = ordenados().map((x) => x.num);
+    const firma = nums.join(",");
+    if (sel.dataset.firma !== firma) {
+      sel.dataset.firma = firma;
+      sel.innerHTML = `<option value="0">todos</option>` + nums.map((n) =>
+        `<option value="${n}">${esc(apellido(n))} #${n}</option>`).join("");
+      sel.value = String(S.radioDe);
+    }
+  }
+
+  function radiosFiltradas() {
+    return S.radioDe ? S.radios.filter((r) => r.num === S.radioDe) : S.radios;
+  }
+
+  function pintarRadios() {
+    const cont = raiz.querySelector(".radios");
+    if (!cont) return;
+    const lista = radiosFiltradas().slice(-6);
+    const firma = lista.map((r) => r.url).join("|") + "/" + S.sonando;
+    if (cont.dataset.firma === firma) return;
+    cont.dataset.firma = firma;
+
+    if (!lista.length) {
+      cont.innerHTML = `<div class="vacio">Todavía no hay comunicaciones${
+        S.radioDe ? " de " + esc(apellido(S.radioDe)) : ""}.</div>`;
+      return;
+    }
+    cont.innerHTML = lista.map((r) => `
+      <div class="rd ${r.url === S.sonando ? "sonando" : ""}">
+        <button data-url="${esc(r.url)}" title="Escuchar">▶</button>
+        <span class="hora">${(r.utc || "").slice(11, 16)}</span>
+        <span class="cod">${esc(apellido(r.num))}</span>
+      </div>`).join("");
+    cont.querySelectorAll("button[data-url]").forEach((b) => {
+      b.onclick = () => reproducir(b.dataset.url);
+    });
+  }
+
+  function reproducir(url) {
+    if (!S.audio) S.audio = new Audio();
+    S.audio.src = url;
+    S.sonando = url;
+    // El relator no puede pisar la voz del piloto: si está hablando, se calla.
+    if (S.relator?.activo?.()) { try { speechSynthesis.cancel(); } catch { /* ya */ } }
+    S.audio.onended = S.audio.onerror = () => { S.sonando = null; pintarRadios(); };
+    S.audio.play().catch(() => { S.sonando = null; });   // sin gesto previo, no deja
+    pintarRadios();
+  }
+
+  /* Lo nuevo se pone solo. Es la gracia: no hay que estar mirando la lista. */
+  function nuevasRadios(radios) {
+    const antes = new Set(S.radios.map((r) => r.url));
+    const nuevas = radios.filter((r) => !antes.has(r.url));
+    S.radios = radios;
+    if (!nuevas.length) return;
+    const mias = S.radioDe ? nuevas.filter((r) => r.num === S.radioDe) : nuevas;
+    const auto = raiz.querySelector(".radio-solo")?.checked;
+    if (auto && mias.length && !S.sonando) reproducir(mias[mias.length - 1].url);
+  }
+
+  function montarRadio() {
+    const sel = raiz.querySelector(".radio-piloto");
+    if (!sel) return;
+    sel.onchange = () => {
+      S.radioDe = Number(sel.value) || 0;
+      try { localStorage.setItem("foruno.radio", String(S.radioDe)); } catch { /* privado */ }
+      pintarRadios();
+    };
+  }
+
   /* ------------------------------------------------------------ tabla */
 
   function ordenados() {
@@ -251,15 +340,20 @@ const Vivo = (() => {
       li.style.borderLeftColor = "#" + d.color;
       li.querySelector(".pos").textContent = f.pos ?? "–";
       li.querySelector(".cod").textContent = d.code;
-      li.querySelector(".equipo").textContent = f.boxes ? "EN BOXES"
-        : f.abandono ? "ABANDONÓ" : d.team;
+      // "Stopped" es el auto parado en pista; "Retired", el abandono ya
+      // declarado. La F1 marca lo primero mucho antes que lo segundo, y para el
+      // que mira son lo mismo: ese auto ya no corre.
+      const fuera = f.abandono || f.detenido;
+      li.querySelector(".equipo").textContent = f.abandono ? "ABANDONÓ"
+        : f.detenido ? "DETENIDO" : f.boxes ? "EN BOXES" : d.team;
       const iv = seg(f.intervalo);
       li.querySelector(".gap").textContent = f.pos === 1 ? "líder" : (f.intervalo || "—");
       li.querySelector(".lider").textContent = f.pos === 1 ? "" : (f.gap || "—");
-      li.classList.toggle("fuera", !!f.abandono);
+      li.classList.toggle("fuera", fuera);
       li.classList.toggle("en-boxes", !!f.boxes);
       // Lo que pidió el usuario: marcar quién se lo está por comer.
-      li.classList.toggle("a-tiro", iv != null && iv > 0 && iv <= CERCA && !f.boxes);
+      li.classList.toggle("a-tiro",
+        iv != null && iv > 0 && iv <= CERCA && !f.boxes && !fuera);
 
       // Cómo viene girando: la última vuelta cerrada, calificada por la propia
       // F1 con el mismo criterio que los microsectores, y cuánto le sacó o le
@@ -316,7 +410,10 @@ const Vivo = (() => {
     const dur = (vuelta * 1000) / n;
     // Nunca llega a 1: si el dato se atrasa, mejor quedarse corto que pasarse
     // de largo y tener que volver el auto para atrás.
-    const dentro = Math.min(0.9, (Date.now() - a.t) / dur);
+    // Un auto detenido no avanza: sin esto la interpolación lo seguiría
+    // arrastrando por la pista aunque esté clavado contra un guardarraíl.
+    const dentro = (p.abandono || p.detenido)
+      ? 0 : Math.min(0.9, (Date.now() - a.t) / dur);
     return Math.min(1, (hechos + dentro) / n);
   }
 
@@ -400,7 +497,9 @@ const Vivo = (() => {
     const filas = ordenados();
     for (let i = filas.length - 1; i >= 0; i--) {
       const f = filas[i];
-      if (f.abandono) continue;
+      // El que abandonó o quedó parado se sigue dibujando, donde se quedó, pero
+      // apagado: saberlo es parte de la carrera.
+      const fuera = f.abandono || f.detenido;
       // Con GPS se usa el GPS; sin GPS, el microsector.
       let punto = f.xy, saltar = false;
       if (!punto) {
@@ -425,7 +524,7 @@ const Vivo = (() => {
       const lider = f.pos === 1;
       const rad = lider ? 11 : 9;
       const iv = seg(f.intervalo);
-      const aTiro = iv != null && iv > 0 && iv <= CERCA && !f.boxes;
+      const aTiro = iv != null && iv > 0 && iv <= CERCA && !f.boxes && !fuera;
 
       if (aTiro) {   // halo pulsante: se lo va a comer
         const pulso = 0.5 + 0.5 * Math.sin(Date.now() / 200);
@@ -433,11 +532,13 @@ const Vivo = (() => {
         ctx.strokeStyle = `rgba(255,60,60,${0.35 + pulso * 0.4})`;
         ctx.lineWidth = 2; ctx.stroke();
       }
+      ctx.globalAlpha = fuera ? 0.3 : 1;
       ctx.beginPath(); ctx.arc(cx, cy, rad + 2, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(11,14,19,.85)"; ctx.fill();
       ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-      ctx.fillStyle = "#" + d.color; ctx.globalAlpha = f.boxes ? 0.45 : 1; ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#" + d.color;
+      ctx.globalAlpha = fuera ? 0.28 : f.boxes ? 0.45 : 1; ctx.fill();
+      ctx.globalAlpha = fuera ? 0.35 : 1;
       if (lider) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke(); }
 
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -446,8 +547,10 @@ const Vivo = (() => {
       ctx.fillStyle = "#fff";
       ctx.strokeText(String(f.num), cx, cy + .5); ctx.fillText(String(f.num), cx, cy + .5);
       ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "left";
-      ctx.strokeText(d.code, cx + rad + 4, cy);
-      ctx.fillStyle = "#" + d.color; ctx.fillText(d.code, cx + rad + 4, cy);
+      const etiqueta = fuera ? d.code + (f.abandono ? " ✕" : " ⏸") : d.code;
+      ctx.strokeText(etiqueta, cx + rad + 4, cy);
+      ctx.fillStyle = "#" + d.color; ctx.fillText(etiqueta, cx + rad + 4, cy);
+      ctx.globalAlpha = 1;
     }
     raf = requestAnimationFrame(dibujar);
   }
@@ -492,6 +595,7 @@ const Vivo = (() => {
       raiz.querySelector(".estado-vivo").textContent = rotulo(d.estadoSesion);
       pintarEstado(d);
       pintarControl(d.mensajes);
+      if (d.radios) { nuevasRadios(d.radios); pintarSelector(); pintarRadios(); }
       const err = raiz.querySelector(".error-vivo");
       if (err) err.textContent = "";
     } catch (e) {
@@ -525,6 +629,14 @@ const Vivo = (() => {
     pintarTabla();
     pintarEstado(d);
     pintarControl(d.mensajes);
+    try {
+      const g = localStorage.getItem("foruno.radio");
+      if (g != null) S.radioDe = Number(g) || 0;
+    } catch { /* modo privado */ }
+    S.radios = d.radios || [];
+    montarRadio();
+    pintarSelector();
+    pintarRadios();
     dibujar();
     S.onResize = () => { redimensionar(); };
     window.addEventListener("resize", S.onResize);
@@ -537,6 +649,8 @@ const Vivo = (() => {
     clearInterval(timer); cancelAnimationFrame(raf);
     if (S.onResize) window.removeEventListener("resize", S.onResize);
     if (S.relator) S.relator.parar();
+    if (S.audio) { try { S.audio.pause(); } catch { /* ya */ } S.audio = null; }
+    S.sonando = null;
     raiz = null; ctx = null;
   }
 

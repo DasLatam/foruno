@@ -29,13 +29,14 @@ const zlib = require("zlib");
 const SEP = String.fromCharCode(0x1e);          // separador de mensajes de SignalR
 const NEGOTIATE = "https://livetiming.formula1.com/signalrcore/negotiate?negotiateVersion=1";
 const WS = "wss://livetiming.formula1.com/signalrcore";
+const BASE_ESTATICO = "https://livetiming.formula1.com/static/";
 const UA = { "User-Agent": "BestHTTP" };
 
 // Lo mínimo para el visor. Pedir de más es tráfico que después hay que tirar.
 const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "DriverList",
                 "TimingData", "Position.z", "TrackStatus", "LapCount",
                 "RaceControlMessages", "SessionData", "ExtrapolatedClock",
-                "TimingAppData"];
+                "TimingAppData", "TeamRadio"];
 
 /* ------------------------------------------------------------ estado */
 
@@ -55,6 +56,8 @@ const S = {
   xy: {},                   // Position.z decodificado, último punto por auto
   mensajes: [],             // RaceControlMessages
   vistos: new Set(),        // claves de mensajes ya guardados, para no duplicar
+  radios: [],               // TeamRadio: las comunicaciones piloto-equipo
+  radiosVistas: new Set(),
 };
 
 /* Los deltas de la F1 actualizan una lista mandando un objeto indexado:
@@ -137,6 +140,18 @@ function aplicar(topic, contenido) {
         S.mensajes.push(m);
       }
       S.mensajes = S.mensajes.slice(-60);
+      break;
+    }
+    case "TeamRadio": {
+      // Cada captura es un mp3 servido bajo el directorio de la sesión. A
+      // diferencia de los .jsonStream, estos SÍ se descargan mientras la
+      // sesión corre, así que se pueden escuchar en el momento.
+      for (const c of comoLista(contenido?.Captures)) {
+        if (!c?.Path || S.radiosVistas.has(c.Path)) continue;
+        S.radiosVistas.add(c.Path);
+        S.radios.push(c);
+      }
+      S.radios = S.radios.slice(-80);
       break;
     }
     default: break;                                   // Heartbeat y demás
@@ -308,6 +323,10 @@ module.exports = async (req, res) => {
       mensajes: S.mensajes.slice(-12).map((m) => ({
         utc: m.Utc, cat: m.Category, texto: m.Message,
         bandera: m.Flag || null, alcance: m.Scope || null, sector: m.Sector ?? null,
+      })),
+      radios: S.radios.slice(-40).map((c) => ({
+        utc: c.Utc, num: Number(c.RacingNumber),
+        url: (S.sesion?.Path ? BASE_ESTATICO + S.sesion.Path : "") + c.Path,
       })),
       t: 0, p: 0,
       ts: new Date(S.ultimo).toISOString(),

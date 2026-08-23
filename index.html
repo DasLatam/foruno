@@ -110,7 +110,15 @@
         <span class="lg" title="La F1 no publica las coordenadas GPS sin suscripción. La posición en el mapa se deduce del microsector en que va cada auto: 24 tramos por vuelta.">📍 posición estimada por microsector</span>
         <span class="error-vivo"></span>
       </div>
-      <details class="cc-caja" open>
+      <details class="cc-caja radio-caja" open>
+        <summary>
+          <span>Radio de</span>
+          <select class="radio-piloto" title="De quién escuchar las comunicaciones"></select>
+          <label class="radio-auto"><input type="checkbox" class="radio-solo" checked>sola</label>
+        </summary>
+        <div class="radios"></div>
+      </details>
+      <details class="cc-caja">
         <summary>Dirección de carrera <span class="cc-ultimo"></span></summary>
         <div class="control-carrera"></div>
       </details>
