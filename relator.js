@@ -23,6 +23,11 @@ const Relator = (() => {
 
   const az = (a) => a[Math.floor(Math.random() * a.length)];
 
+  // "1:16.867" leído de corrido suena a número de teléfono.
+  const tiempo = (t) => String(t || "")
+    .replace(/^(\d+):/, "$1 minuto ")
+    .replace(".", " con ");
+
   /* ------------------------------------------------------------ frases */
 
   function frase(e, pilotos) {
@@ -76,7 +81,11 @@ const Relator = (() => {
       }
 
       case "vuelta":
-        return `Mejor vuelta de ${N(e.num)}: ${(e.t || "").replace(":", " minuto ")}.`;
+        return az([
+          `¡Vuelta rápida de la carrera para ${N(e.num)}! ${tiempo(e.t)}.`,
+          `Récord de la sesión: ${N(e.num)}, ${tiempo(e.t)}.`,
+          `${N(e.num)} pone la vuelta más rápida hasta ahora: ${tiempo(e.t)}.`,
+        ]);
 
       default:
         return null;

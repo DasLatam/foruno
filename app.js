@@ -434,8 +434,16 @@ async function vistaVivo() {
 
   const btn = $(".btn-relato");
   btn.onclick = () => {
-    if (Relator.activo()) { Relator.parar(); btn.classList.remove("activo"); }
-    else { Relator.arrancar(); btn.classList.add("activo"); }
+    const caja = $(".relato-caja");
+    if (Relator.activo()) {
+      Relator.parar(); btn.classList.remove("activo");
+      if (caja) caja.hidden = true;
+    } else {
+      Relator.arrancar(); btn.classList.add("activo");
+      // La caja aparece sólo con el relato encendido: apagado no dice nada y
+      // le estaría robando alto a la tabla.
+      if (caja) caja.hidden = false;
+    }
   };
   Vivo.usarRelator(Relator);
 

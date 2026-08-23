@@ -12,7 +12,7 @@
  */
 
 const Vivo = (() => {
-  const POLL_MS = 3000;
+  const POLL_MS = 2000;         // el estado ya está en memoria del server: es barato
   const CERCA = 0.3;            // segundos: umbral de "se lo va a comer"
   const REPETIR_ALERTA = 25000; // no repetir la misma alerta antes de esto
   const COLAPINTO = 43;         // a quién se escucha por defecto
@@ -117,7 +117,10 @@ const Vivo = (() => {
 
       if (p.boxes && !ant.boxes) ev.push({ tipo: "boxes", num: Number(num) });
       if (p.abandono && !ant.abandono) ev.push({ tipo: "abandono", num: Number(num) });
-      if (p.mejorVuelta && p.mejorVuelta !== ant.mejorVuelta) {
+      // Sólo la vuelta rápida de la SESIÓN. Que cada piloto mejore su marca
+      // pasa decenas de veces por carrera y no es noticia: cantarlas todas
+      // convierte el relato en una lista de tiempos.
+      if (p.ultMejorTotal && p.mejorVuelta && p.mejorVuelta !== ant.mejorVuelta) {
         ev.push({ tipo: "vuelta", num: Number(num), t: p.mejorVuelta });
       }
     }
@@ -391,30 +394,47 @@ const Vivo = (() => {
      los tramos ya cubiertos sale en qué punto del giro está, y eso alcanza para
      dibujarlo sobre el trazado. Es aproximado y hay que decirlo: la resolución
      es de un tramo, unos pocos segundos de pista. */
-  function fraccionDeVuelta(num, p) {
+  /* Dónde está el auto en la vuelta, como fracción de 0 a 1.
+   *
+   * Contar microsectores y reiniciar el cronómetro en cada cambio se ve a los
+   * tirones: el sondeo y el microsector duran los dos unos tres segundos, así
+   * que a veces entran dos de golpe y a veces ninguno, y el auto pega saltos.
+   *
+   * Acá el auto avanza SIEMPRE a velocidad constante (una vuelta cada tiempo de
+   * vuelta) y la medición sólo lo corrige de a poco, como un reloj que se pone
+   * en hora sin saltar. El resultado es parejo aunque el dato llegue desparejo.
+   */
+  function fraccionDeVuelta(num, p, ahora) {
     const segs = (p.sectores || []).flatMap((x) => x.segs || []);
     if (!segs.length) return null;
     const n = segs.length;
-    const hechos = segs.filter((g) => g).length;
+    // Al centro del tramo en curso: el auto ya pasó el principio y no llegó al
+    // final, así que la mitad es la mejor apuesta.
+    const medido = Math.min(1, (segs.filter((g) => g).length + 0.5) / n);
 
-    // Contar tramos y nada más deja al auto quieto tres segundos y de golpe un
-    // salto. Se interpola dentro del tramo en curso con el reloj: se sabe
-    // cuándo entró y cuánto dura, así que el movimiento sale continuo.
     let a = S.avance.get(num);
-    if (!a || a.hechos !== hechos) { a = { hechos, t: Date.now() }; S.avance.set(num, a); }
+    if (!a) { a = { f: medido, t: ahora }; S.avance.set(num, a); return a.f; }
+
+    const dt = Math.min(1, (ahora - a.t) / 1000);     // una pestaña dormida no dispara
+    a.t = ahora;
+    // Un auto detenido no avanza: sin esto la interpolación lo seguiría
+    // arrastrando por la pista aunque esté clavado contra un guardarraíl.
+    if (p.abandono || p.detenido) return a.f;
 
     // La vuelta anterior puede ser cualquier cosa (una parada en boxes, una
     // bandera roja de media hora), así que se acota a algo verosímil.
     const bruta = mm(p.mejorVuelta) || mm(p.ultimaVuelta) || 90;
     const vuelta = Math.max(50, Math.min(180, bruta));
-    const dur = (vuelta * 1000) / n;
-    // Nunca llega a 1: si el dato se atrasa, mejor quedarse corto que pasarse
-    // de largo y tener que volver el auto para atrás.
-    // Un auto detenido no avanza: sin esto la interpolación lo seguiría
-    // arrastrando por la pista aunque esté clavado contra un guardarraíl.
-    const dentro = (p.abandono || p.detenido)
-      ? 0 : Math.min(0.9, (Date.now() - a.t) / dur);
-    return Math.min(1, (hechos + dentro) / n);
+
+    let f = a.f + dt / vuelta;
+    // La corrección va por el camino corto: de 0,98 a 0,02 se avanza 4 %, no se
+    // retrocede 96 %.
+    let d = medido - f;
+    if (d < -0.5) d += 1;
+    if (d > 0.5) d -= 1;
+    f += d * Math.min(1, dt * 0.9);                   // se pone en hora en ~1 s
+    a.f = (f % 1 + 1) % 1;
+    return a.f;
   }
 
   /* Longitud acumulada del trazado, para poder pedir "el punto al 37 % de la
@@ -495,6 +515,7 @@ const Vivo = (() => {
     }
 
     const filas = ordenados();
+    const ahora = Date.now();
     for (let i = filas.length - 1; i >= 0; i--) {
       const f = filas[i];
       // El que abandonó o quedó parado se sigue dibujando, donde se quedó, pero
@@ -503,7 +524,7 @@ const Vivo = (() => {
       // Con GPS se usa el GPS; sin GPS, el microsector.
       let punto = f.xy, saltar = false;
       if (!punto) {
-        const fr = fraccionDeVuelta(f.num, f);
+        const fr = fraccionDeVuelta(f.num, f, ahora);
         if (fr == null) continue;
         // Al cruzar meta la fracción vuelve a cero: sin esto el auto cruzaría
         // el circuito al revés, en diagonal, hasta la largada.
@@ -516,8 +537,11 @@ const Vivo = (() => {
       // Suavizado: los datos llegan de a saltos y sin esto los autos brincan.
       let s = S.suave.get(f.num);
       if (!s || saltar) { s = { x: punto.x, y: punto.y }; S.suave.set(f.num, s); }
-      s.x += (punto.x - s.x) * 0.18;
-      s.y += (punto.y - s.y) * 0.18;
+      // Con GPS hace falta suavizar (llega a 4 Hz y a saltos); con la fracción
+      // estimada ya viene continua, así que casi no se toca.
+      const k = f.xy ? 0.18 : 0.5;
+      s.x += (punto.x - s.x) * k;
+      s.y += (punto.y - s.y) * k;
 
       const cx = v.px(s.x), cy = v.py(s.y);
       const d = ficha(f.num);
