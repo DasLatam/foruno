@@ -452,3 +452,8 @@ tr:hover td{background:var(--panel)}
   .visor-cab .vc-tit strong{font-size:13px}
   .paneles button{padding:5px 10px}
 }
+.banner-vivo.corriendo{
+  background:linear-gradient(90deg, rgba(255,176,0,.14), transparent);
+  border-color:rgba(255,176,0,.4);
+}
+.banner-vivo.corriendo .bv-txt em{color:#e8b45a}

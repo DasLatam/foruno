@@ -1,61 +1,58 @@
-/* Proxy a la fuente de tiempo real de la F1.
+/* El directo de la F1, por SignalR.
  *
- * livetiming.formula1.com publica, mientras la sesión ocurre, unos archivos
- * .jsonStream que se van escribiendo de a poco. Son públicos y no piden
- * autenticación — a diferencia del SignalR, que devuelve 401 — así que sirven
- * para tener el vivo sin pagar la suscripción de OpenF1.
+ * Historia corta de por qué este archivo se reescribió: antes leía los
+ * `.jsonStream` de `livetiming.formula1.com/static/…`. Esos archivos NO son un
+ * feed en vivo — son el **archivo** de la sesión, y hasta que la F1 lo termina
+ * de armar contestan 403. Se puede comprobar en un solo lugar:
  *
- * Hace falta un proxy porque ese host NO manda cabeceras CORS: el navegador no
- * puede leerlo directo. Esta función corre en el servidor de Vercel, donde el
- * CORS no aplica.
+ *     ArchiveStatus.json  ->  {"Status":"Generating"}   sesión corriendo, todo 403
+ *     ArchiveStatus.json  ->  {"Status":"Complete"}     ya se lee de punta a punta
  *
- * Dos modos:
- *   ?snapshot=1   reconstruye el estado completo de la sesión y devuelve algo
- *                 compacto. El archivo crudo pesa varios MB y el navegador no
- *                 tiene por qué bajarlo entero.
- *   ?t=N&p=M      devuelve sólo lo escrito después de esos bytes, con Range
- *                 requests. Cada poll son unos pocos KB.
+ * El directo de verdad está en SignalR, y hay dos endpoints. El viejo,
+ * `/signalr`, devuelve 401 con `www-authenticate: Basic` — es el que hacía
+ * pensar que no había directo gratis. El que sirve es el **nuevo**:
+ *
+ *     POST https://livetiming.formula1.com/signalrcore/negotiate?negotiateVersion=1
+ *     wss://livetiming.formula1.com/signalrcore?id=<connectionToken>
+ *
+ * y **no pide autenticación**. Es el mismo camino que usa el ingestor de OpenF1
+ * (que apoya en `fastf1-livetiming`), donde el token es opcional.
+ *
+ * La conexión se mantiene abierta y viva en un singleton: al suscribirse, el
+ * servidor manda el estado completo de cada topic, y después sólo los cambios.
+ * Cada pedido HTTP devuelve la foto que hay en memoria, así que contesta al
+ * instante y una sola conexión alcanza para todos los clientes.
  */
 
-const BASE = "https://livetiming.formula1.com/static/";
-const UA = { "User-Agent": "BestHTTP", "Accept-Encoding": "identity" };
+const zlib = require("zlib");
 
-// Sin esto la F1 devuelve la respuesta de un CDN cacheada y el vivo se atrasa.
-const NOCACHE = { ...UA, "Cache-Control": "no-cache" };
+const SEP = String.fromCharCode(0x1e);          // separador de mensajes de SignalR
+const NEGOTIATE = "https://livetiming.formula1.com/signalrcore/negotiate?negotiateVersion=1";
+const WS = "wss://livetiming.formula1.com/signalrcore";
+const UA = { "User-Agent": "BestHTTP" };
 
-/* La F1 anuncia la sesión que viene en SessionInfo mucho antes de abrir la
-   transmisión, y hasta que la abre los .jsonStream no existen: contesta 403,
-   no 404. Eso no es una falla, es "todavía no", y hay que decirlo distinto. */
-class NoPublicado extends Error {}
+// Lo mínimo para el visor. Pedir de más es tráfico que después hay que tirar.
+const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "DriverList",
+                "TimingData", "Position.z", "TrackStatus", "LapCount",
+                "RaceControlMessages"];
 
-async function traer(ruta, desde) {
-  const cab = { ...NOCACHE };
-  if (desde > 0) cab.Range = `bytes=${desde}-`;
-  const r = await fetch(BASE + ruta, { headers: cab });
-  if (r.status === 416) return { texto: "", fin: desde };      // todavía no creció
-  if (r.status === 403 || r.status === 404) throw new NoPublicado(ruta);
-  if (!r.ok && r.status !== 206) throw new Error(`${ruta}: HTTP ${r.status}`);
-  const texto = await r.text();
-  return { texto, fin: desde + Buffer.byteLength(texto, "utf8") };
-}
+/* ------------------------------------------------------------ estado */
 
-/* Cada línea es <hh:mm:ss.mmm><json>. Una línea cortada al final (el archivo
-   creció mientras lo leíamos) se descarta y se relee en el próximo poll. */
-function parsear(texto) {
-  const salida = [];
-  let consumido = 0;
-  for (const bruto of texto.split(/\r?\n/)) {
-    const linea = bruto.replace(/^﻿/, "");
-    if (linea.length < 13) { consumido += Buffer.byteLength(bruto, "utf8") + 1; continue; }
-    try {
-      salida.push([linea.slice(0, 12), JSON.parse(linea.slice(12))]);
-      consumido += Buffer.byteLength(bruto, "utf8") + 1;
-    } catch {
-      break;    // línea incompleta: acá se corta y se retoma desde este byte
-    }
-  }
-  return { registros: salida, consumido };
-}
+const S = {
+  ws: null,
+  conectando: null,
+  listo: false,
+  desde: 0,                 // cuándo se conectó
+  ultimo: 0,                // último mensaje recibido, para detectar que murió
+  sesion: null,             // SessionInfo
+  estado: null,             // SessionStatus.Status
+  pista: null,              // TrackStatus
+  vuelta: null,             // LapCount
+  pilotos: {},              // DriverList
+  lineas: {},               // TimingData.Lines acumulado
+  xy: {},                   // Position.z decodificado, último punto por auto
+  mensajes: [],             // RaceControlMessages
+};
 
 /* Los deltas de la F1 actualizan una lista mandando un objeto indexado:
    {"Sectors": {"2": {...}}} significa "sólo cambió el sector 3". Si eso se
@@ -63,6 +60,7 @@ function parsear(texto) {
    índice por índice. */
 function fundir(dst, src) {
   for (const [k, v] of Object.entries(src)) {
+    if (k === "_kf") continue;                        // marca interna de la F1
     const esObj = v && typeof v === "object" && !Array.isArray(v);
     if (esObj && Array.isArray(dst[k])) {
       for (const [i, sub] of Object.entries(v)) {
@@ -94,60 +92,116 @@ function comoLista(x) {
   return [];
 }
 
-/* StartDate viene sin zona ("2026-08-23T15:00:00") y el huso aparte, en
-   GmtOffset. Si el navegador lo parsea solo lo toma como hora local suya y la
-   cuenta regresiva queda corrida las horas que haya de diferencia. */
-function aUTC(fechaLocal, gmt) {
-  if (!fechaLocal) return null;
-  const m = /^(-)?(\d+):(\d+):(\d+)$/.exec(gmt || "00:00:00");
-  const off = m ? (m[1] ? -1 : 1) * (+m[2] * 3600 + +m[3] * 60 + +m[4]) : 0;
-  const t = Date.parse(fechaLocal.replace(/Z$/, "") + "Z");   // se lee como UTC...
-  return Number.isFinite(t) ? new Date(t - off * 1000).toISOString() : null;  // ...y se corrige
-}
-
-/* ¿La F1 ya abrió el stream de esta sesión?
- *
- * Es la única señal que sirve. SessionStatus se queda en "Inactive" hasta el
- * semáforo, pero los archivos empiezan a escribirse antes: con los autos en la
- * grilla y en la vuelta de formación ya hay posiciones para mostrar. Y al
- * revés, entre sesiones el SessionInfo ya apunta a la siguiente sin que exista
- * un solo byte. Un Range de un byte contesta en milisegundos y no miente. */
-async function yaAbrio(path) {
-  if (!path) return false;
+/* Position.z viene como base64 + deflate crudo. */
+function posiciones(carga) {
+  if (typeof carga !== "string") return;
   try {
-    const r = await fetch(BASE + path + "TimingData.jsonStream",
-                          { headers: { ...NOCACHE, Range: "bytes=0-0" } });
-    return r.ok || r.status === 206;
-  } catch { return false; }
+    const d = JSON.parse(zlib.inflateRawSync(Buffer.from(carga, "base64")).toString());
+    for (const bloque of d.Position || []) {
+      for (const [num, e] of Object.entries(bloque.Entries || {})) {
+        if (e.X === 0 && e.Y === 0) continue;         // sin señal
+        S.xy[num] = { x: e.X, y: e.Y, estado: e.Status };
+      }
+    }
+  } catch { /* un bloque ilegible no debe cortar el resto */ }
 }
 
-async function descubrir() {
-  const [estado, info] = await Promise.all([
-    fetch(BASE + "StreamingStatus.json", { headers: NOCACHE }).then((r) => r.text()),
-    fetch(BASE + "SessionInfo.json", { headers: NOCACHE }).then((r) => r.text()),
-  ]);
-  const st = JSON.parse(estado.replace(/^﻿/, ""));
-  const si = JSON.parse(info.replace(/^﻿/, ""));
-  return {
-    streaming: st.Status,                 // "Available" | "Offline"
-    path: si.Path || null,
-    abierto: await yaAbrio(si.Path),
-    sesion: {
-      key: si.Key, nombre: si.Name, tipo: si.Type,
-      gp: si.Meeting?.Name, circuito: si.Meeting?.Circuit?.ShortName,
-      pais: si.Meeting?.Country?.Name,
-      inicio: si.StartDate, fin: si.EndDate, gmt: si.GmtOffset,
-      inicioUTC: aUTC(si.StartDate, si.GmtOffset),
-      finUTC: aUTC(si.EndDate, si.GmtOffset),
-      estado: si.SessionStatus,           // Inprogress | Finished | Finalised | Ends
-    },
-  };
+function aplicar(topic, contenido) {
+  S.ultimo = Date.now();
+  switch (topic) {
+    case "SessionInfo": S.sesion = contenido; break;
+    case "SessionStatus": S.estado = contenido?.Status ?? S.estado; break;
+    case "TrackStatus": S.pista = contenido; break;
+    case "LapCount":
+      S.vuelta = { ...(S.vuelta || {}), ...contenido }; break;
+    case "DriverList":
+      if (contenido && typeof contenido === "object") fundir(S.pilotos, contenido);
+      break;
+    case "TimingData":
+      if (contenido?.Lines) fundir(S.lineas, contenido.Lines);
+      break;
+    case "Position.z":
+      posiciones(contenido); break;
+    case "RaceControlMessages": {
+      const ms = comoLista(contenido?.Messages);
+      if (ms.length) S.mensajes = S.mensajes.concat(ms).slice(-40);
+      break;
+    }
+    default: break;                                   // Heartbeat y demás
+  }
 }
+
+/* ------------------------------------------------------------ conexión */
+
+async function conectar() {
+  const r = await fetch(NEGOTIATE, { method: "POST", headers: UA });
+  if (!r.ok) throw new Error(`negotiate: HTTP ${r.status}`);
+  const neg = await r.json();
+  // El balanceador de AWS reparte por cookie: sin devolvérsela, el WebSocket
+  // puede caer en otra instancia que no conoce el connectionToken.
+  const cookie = (r.headers.getSetCookie?.() || []).map((c) => c.split(";")[0]).join("; ");
+
+  const ws = new WebSocket(
+    WS + "?id=" + encodeURIComponent(neg.connectionToken),
+    { headers: { ...UA, Cookie: cookie } });
+
+  return new Promise((resolve, reject) => {
+    const fallar = (e) => reject(new Error("websocket: " + (e?.message || e?.code || e)));
+    const corte = setTimeout(() => fallar("sin respuesta en 15 s"), 15000);
+
+    ws.onerror = fallar;
+    ws.onclose = () => { S.listo = false; S.ws = null; };
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ protocol: "json", version: 1 }) + SEP);
+      setTimeout(() => ws.send(JSON.stringify({
+        type: 1, invocationId: "0", target: "Subscribe", arguments: [TOPICS],
+      }) + SEP), 300);
+    };
+
+    ws.onmessage = (ev) => {
+      for (const parte of String(ev.data).split(SEP)) {
+        if (!parte) continue;
+        let m;
+        try { m = JSON.parse(parte); } catch { continue; }
+
+        // type 3 = respuesta a Subscribe: trae el estado completo de cada topic.
+        if (m.type === 3 && m.result) {
+          for (const [topic, contenido] of Object.entries(m.result)) {
+            aplicar(topic, contenido);
+          }
+          clearTimeout(corte);
+          S.ws = ws; S.listo = true; S.desde = Date.now();
+          resolve(ws);
+        }
+        // type 1 = un cambio suelto.
+        if (m.type === 1 && m.target === "feed") {
+          aplicar(m.arguments[0], m.arguments[1]);
+        }
+      }
+    };
+  });
+}
+
+/* Se conecta si hace falta, y una sola vez aunque lleguen mil pedidos juntos.
+   Si hace más de dos minutos que no llega nada, la conexión se da por muerta:
+   el Heartbeat de la F1 baja cada pocos segundos. */
+async function asegurar() {
+  const muerta = S.listo && Date.now() - S.ultimo > 120000;
+  if (muerta) { try { S.ws?.close(); } catch { /* ya estaba */ } S.listo = false; S.ws = null; }
+  if (S.listo) return;
+  if (!S.conectando) {
+    S.conectando = conectar().finally(() => { S.conectando = null; });
+  }
+  await S.conectando;
+}
+
+/* ------------------------------------------------------------ salida */
 
 /* Estado de un piloto, quedándonos sólo con lo que el visor usa. */
-function compactar(lineas, posiciones) {
+function compactar() {
   const out = {};
-  for (const [num, l] of Object.entries(lineas)) {
+  for (const [num, l] of Object.entries(S.lineas)) {
     if (!l || typeof l !== "object") continue;
     const iv = l.IntervalToPositionAhead || {};
     out[num] = {
@@ -165,82 +219,82 @@ function compactar(lineas, posiciones) {
       })),
       mejorVuelta: l.BestLapTime?.Value ?? "",
       ultimaVuelta: l.LastLapTime?.Value ?? "",
-      // La propia F1 califica cada vuelta cerrada: si fue la mejor de la
-      // sesión, si fue la mejor del piloto, o ninguna de las dos. Es el mismo
-      // criterio de los microsectores, pero de la vuelta entera.
+      // La F1 califica cada vuelta cerrada: mejor de la sesión, mejor propia, o
+      // ninguna. Es el mismo criterio de los microsectores, sobre la vuelta entera.
       ultMejorTotal: !!l.LastLapTime?.OverallFastest,
       ultMejorPropia: !!l.LastLapTime?.PersonalFastest,
-      xy: posiciones[num] || null,
+      xy: S.xy[num] || null,
     };
   }
   return out;
+}
+
+/* GmtOffset viene aparte de StartDate, que no trae zona. Si lo parsea el
+   navegador lo toma como hora local suya y la cuenta regresiva queda corrida. */
+function aUTC(fechaLocal, gmt) {
+  if (!fechaLocal) return null;
+  const m = /^(-)?(\d+):(\d+):(\d+)$/.exec(gmt || "00:00:00");
+  const off = m ? (m[1] ? -1 : 1) * (+m[2] * 3600 + +m[3] * 60 + +m[4]) : 0;
+  const t = Date.parse(fechaLocal.replace(/Z$/, "") + "Z");
+  return Number.isFinite(t) ? new Date(t - off * 1000).toISOString() : null;
+}
+
+function descubrir() {
+  const si = S.sesion || {};
+  const pilotos = Object.keys(S.lineas).length;
+  return {
+    // Hay directo si el feed nos está dando pilotos. Es la única señal honesta:
+    // SessionStatus se queda en "Inactive" hasta el semáforo, con los autos ya
+    // dando la vuelta de formación.
+    abierto: pilotos > 0,
+    path: si.Path || null,
+    sesion: {
+      key: si.Key ?? null, nombre: si.Name ?? null, tipo: si.Type ?? null,
+      gp: si.Meeting?.Name ?? null, circuito: si.Meeting?.Circuit?.ShortName ?? null,
+      pais: si.Meeting?.Country?.Name ?? null,
+      inicio: si.StartDate ?? null, fin: si.EndDate ?? null, gmt: si.GmtOffset ?? null,
+      inicioUTC: aUTC(si.StartDate, si.GmtOffset),
+      finUTC: aUTC(si.EndDate, si.GmtOffset),
+      estado: S.estado,
+    },
+    streaming: "Available",
+    archivo: si.ArchiveStatus?.Status ?? null,
+    pista: S.pista || null,
+    vueltas: S.vuelta || null,
+  };
 }
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store");
   try {
+    await asegurar();
     const url = new URL(req.url, "http://x");
-    const q = url.searchParams;
 
-    if (!q.get("path")) {
-      return res.status(200).json(await descubrir());
+    if (!url.searchParams.get("path")) {
+      return res.status(200).json(descubrir());
     }
 
-    const path = q.get("path").replace(/[^A-Za-z0-9_\-/.]/g, "");   // sin traversal
-    const snapshot = q.get("snapshot") === "1";
-    let tDesde = snapshot ? 0 : Number(q.get("t") || 0);
-    let pDesde = snapshot ? 0 : Number(q.get("p") || 0);
-
-    const [timing, pos, estadoSesion] = await Promise.all([
-      traer(path + "TimingData.jsonStream", tDesde),
-      traer(path + "Position.z.jsonStream", pDesde),
-      traer(path + "SessionStatus.jsonStream", 0).catch(() => ({ texto: "" })),
-    ]);
-
-    const t = parsear(timing.texto);
-    const p = parsear(pos.texto);
-
-    // Posiciones X/Y: vienen base64 + deflate crudo.
-    const zlib = require("zlib");
-    const xy = {};
-    for (const [, carga] of p.registros) {
-      if (typeof carga !== "string") continue;
-      try {
-        const d = JSON.parse(zlib.inflateRawSync(Buffer.from(carga, "base64")).toString());
-        for (const bloque of d.Position || []) {
-          for (const [num, e] of Object.entries(bloque.Entries || {})) {
-            if (e.X === 0 && e.Y === 0) continue;      // sin señal
-            xy[num] = { x: e.X, y: e.Y, estado: e.Status };
-          }
-        }
-      } catch { /* un bloque ilegible no debe cortar el resto */ }
-    }
-
-    let cuerpo;
-    if (snapshot) {
-      const lineas = {};
-      for (const [, r] of t.registros) if (r.Lines) fundir(lineas, r.Lines);
-      cuerpo = { snapshot: true, pilotos: compactar(lineas, xy) };
-    } else {
-      const lineas = {};
-      for (const [, r] of t.registros) if (r.Lines) fundir(lineas, r.Lines);
-      cuerpo = { snapshot: false, pilotos: compactar(lineas, xy) };
-    }
-
-    const ss = parsear(estadoSesion.texto).registros;
-    cuerpo.estadoSesion = ss.length ? ss[ss.length - 1][1]?.Status : null;
-    cuerpo.t = tDesde + t.consumido;
-    cuerpo.p = pDesde + p.consumido;
-    cuerpo.ts = t.registros.length ? t.registros[t.registros.length - 1][0] : null;
-    res.status(200).json(cuerpo);
-  } catch (e) {
-    // "Todavía no salió al aire" es un estado normal, no un 502: el front
-    // tiene que poder mostrar la cuenta regresiva en vez de un error.
-    if (e instanceof NoPublicado) {
+    // El estado completo está siempre en memoria, así que ya no hace falta
+    // distinguir snapshot de delta: se manda la foto entera, que igual son
+    // pocos KB. El front la funde con lo que tenía.
+    const pilotos = compactar();
+    if (!Object.keys(pilotos).length) {
       return res.status(200).json({ aunNo: true, pilotos: {}, t: 0, p: 0,
                                     estadoSesion: null });
     }
+    res.status(200).json({
+      snapshot: true,
+      pilotos,
+      estadoSesion: S.estado,
+      pista: S.pista || null,
+      vueltas: S.vuelta || null,
+      t: 0, p: 0,
+      ts: new Date(S.ultimo).toISOString(),
+    });
+  } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
   }
 };
+
+module.exports.descubrir = descubrir;

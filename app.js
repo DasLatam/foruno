@@ -112,6 +112,13 @@ function bannerVivo() {
           : "entrá a ver los autos en pista"}</em></span>
     </a>`;
   }
+  if (enPista(app.live)) {
+    return `<a class="banner-vivo corriendo" href="#/vivo">
+      <span class="boton-vivo grande" data-apagado><span class="punto-vivo"></span> VIVO</span>
+      <span class="bv-txt"><b>${esc(si.gp)} — ${esc(si.nombre)} está corriendo</b>
+        <em>la F1 libera la telemetría al terminar; se enciende solo</em></span>
+    </a>`;
+  }
   const prox = proximaSesion();
   if (!prox) return "";
   return `<a class="banner-vivo" href="#/vivo">
@@ -150,7 +157,7 @@ function vistaCalendario() {
 
   const prox = proximaSesion();
   clearInterval(app.timerBanner);
-  if (prox && !hayVivo(app.live)) {
+  if (prox && !hayVivo(app.live) && !enPista(app.live)) {
     app.timerBanner = setInterval(() => {
       const el = $("#bvCuenta");
       if (!el) return clearInterval(app.timerBanner);
@@ -325,6 +332,15 @@ function hayVivo(live) {
   return !!live.abierto;
 }
 
+/* La sesión está corriendo AHORA pero no hay datos que mostrar.
+ *
+ * Es el caso que rompió la ilusión del directo: los .jsonStream de la F1 no son
+ * un feed en vivo, son el archivo, y no se leen hasta que está armado. Mientras
+ * corre la sesión, ArchiveStatus dice "Generating" y todo lo demás da 403. */
+function enPista(live) {
+  return !!live && !live.abierto && live.archivo === "Generating";
+}
+
 /* Antes del semáforo la F1 no dice "Started" pero ya hay autos en pista. Se
    rotula distinto para que no parezca que la carrera arrancó. */
 function faseDe(live) {
@@ -381,6 +397,7 @@ function pintarBotonNav() {
     return;
   }
   a.classList.add("dormido");
+  if (enPista(app.live)) { c.textContent = " · en pista"; return; }
   const prox = app.indice ? proximaSesion() : null;
   c.textContent = prox ? " · " + cuentaCorta(prox.t - Date.now()) : "";
 }
@@ -438,8 +455,9 @@ async function vistaVivo() {
 /* Sin sesión al aire. Dos situaciones muy distintas: falta mucho (cuenta
    regresiva) o está por largar (previa, con la grilla de partida). */
 function portadaEspera() {
-  const arrancando = porSalir(app.live);
-  const prox = arrancando ? null : proximaSesion();
+  const corriendo = enPista(app.live);
+  const arrancando = !corriendo && porSalir(app.live);
+  const prox = (arrancando || corriendo) ? null : proximaSesion();
   // La más reciente de todas, no la primera del último GP: recorrer los GPs al
   // revés no alcanza, adentro las sesiones siguen en orden y salía la Práctica 1.
   const ultima = app.indice.gps
@@ -451,9 +469,14 @@ function portadaEspera() {
     <div class="scroll"><div class="portada">
       <button class="boton-vivo grande" disabled>
         <span class="punto-vivo"></span> VIVO
-        <em>${arrancando ? "esperando la señal" : "sin señal"}</em>
+        <em>${corriendo ? "en pista" : arrancando ? "esperando la señal" : "sin señal"}</em>
       </button>
-      ${arrancando ? `
+      ${corriendo ? `
+        <h1>${esc(si.gp)} — ${esc(si.nombre)} está corriendo</h1>
+        <p class="proxima">La F1 no publica la telemetría mientras la sesión
+          ocurre: la libera entera cuando termina. Esto se enciende solo en cuanto
+          eso pase, y vas a poder verla de punta a punta con pausa y avance.</p>
+        ${gridHTML()}` : arrancando ? `
         <h1>${esc(si.gp)} — ${esc(si.nombre)}</h1>
         <div class="reloj-cuenta" id="cuenta"></div>
         <p class="que">La F1 abre su transmisión de tiempo real un rato antes de
@@ -477,6 +500,17 @@ function portadaEspera() {
     </div></div>`;
 
   clearInterval(app.timerCuenta);
+  // Mientras corre no hay a qué contar: no se sabe cuándo va a estar el archivo.
+  // Se sondea igual, seguido, porque el momento en que aparece es impredecible.
+  if (corriendo) {
+    app.timerCuenta = setInterval(async () => {
+      app.live = await consultarVivo();
+      pintarBotonNav();
+      if (location.hash !== "#/vivo") return;
+      if (hayVivo(app.live) || !enPista(app.live)) rutear();
+    }, 15000);
+    return;
+  }
   const blanco = arrancando ? Date.parse(si.inicioUTC) : (prox && prox.t);
   if (!blanco) return;
 
