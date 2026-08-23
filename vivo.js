@@ -15,7 +15,7 @@ const Vivo = (() => {
   const POLL_MS = 2000;         // el estado ya está en memoria del server: es barato
   const CERCA = 0.3;            // segundos: umbral de "se lo va a comer"
   const REPETIR_ALERTA = 25000; // no repetir la misma alerta antes de esto
-  const COLAPINTO = 43;         // a quién se escucha por defecto
+  const TODOS = 0;              // a quién se escucha por defecto: a todos
 
   let raiz = null, ctx = null, timer = 0, raf = 0;
   const S = {
@@ -23,9 +23,10 @@ const Vivo = (() => {
     track: null, vista: null, corriendo: false,
     ultimaAlerta: new Map(), vueltaContada: 0, relator: null,
     suave: new Map(),           // num -> {x, y} interpolado para que no salte
-    radios: [], radioDe: COLAPINTO, sonando: null, audio: null,
+    radios: [], radioDe: TODOS, sonando: null, audio: null, reloj: null,
     cola: [], bloqueado: false,
     mensajes: [], msgVistos: new Set(),
+    textos: new Map(), pidiendo: new Set(), pendientes: [], transcribiendo: false,
     avance: new Map(),          // num -> {hechos, t}: cuándo entró al microsector
     fraccion: new Map(),        // num -> última fracción de vuelta, para el cruce de meta
   };
@@ -173,15 +174,50 @@ const Vivo = (() => {
     return null;
   }
 
+  /* Cuánto falta para el final.
+   *
+   * La F1 manda `Remaining` cada tanto, con la hora en que lo midió y un
+   * `Extrapolating` que significa "de acá en más contalo vos". Mostrarlo tal
+   * cual deja el reloj clavado entre mensaje y mensaje. */
+  function guardarReloj(r) {
+    if (!r || !r.Remaining) return;
+    const [h, m, sg] = String(r.Remaining).split(":").map(Number);
+    if (![h, m, sg].every(Number.isFinite)) return;
+    S.reloj = {
+      base: (h * 3600 + m * 60 + sg) * 1000,
+      desde: Date.parse(r.Utc) || Date.now(),
+      corre: !!r.Extrapolating,
+    };
+  }
+
+  function textoReloj() {
+    const r = S.reloj;
+    if (!r) return "";
+    // Con bandera roja o safety car el reloj de carrera se detiene, y la F1 lo
+    // avisa apagando Extrapolating. Seguir descontando ahí sería mentir.
+    const ms = r.corre ? r.base - (Date.now() - r.desde) : r.base;
+    const t = Math.max(0, Math.floor(ms / 1000));
+    const dd = (n) => String(n).padStart(2, "0");
+    return `${dd(Math.floor(t / 3600))}:${dd(Math.floor((t % 3600) / 60))}:${dd(t % 60)}`;
+  }
+
+  function pintarReloj() {
+    const el = raiz && raiz.querySelector(".mk-reloj");
+    if (!el) return;
+    const t = textoReloj();
+    el.textContent = t ? "restan " + t : "";
+    el.classList.toggle("detenido", !!S.reloj && !S.reloj.corre);
+  }
+
   function pintarEstado(d) {
-    const v = d.vueltas || {}, r = d.reloj || {};
+    const v = d.vueltas || {};
     const mk = raiz.querySelector(".mk-vuelta");
     if (mk) {
       mk.textContent = v.CurrentLap
         ? `VUELTA ${v.CurrentLap}${v.TotalLaps ? " / " + v.TotalLaps : ""}` : "";
-      raiz.querySelector(".mk-reloj").textContent = r.Remaining
-        ? "restan " + r.Remaining : "";
     }
+    guardarReloj(d.reloj);
+    pintarReloj();
 
     const banda = raiz.querySelector(".banda-pista");
     if (!banda) return;
@@ -321,7 +357,8 @@ const Vivo = (() => {
     const cont = raiz.querySelector(".radios");
     if (!cont) return;
     const lista = cronologia().slice(-8);
-    const firma = lista.map((x) => x.url || x.utc + x.texto).join("|") +
+    const firma = lista.map((x) => (x.url || x.utc + x.texto) +
+                  (x.url ? "@" + (S.textos.get(x.url) ? "t" : "") : "")).join("|") +
                   "/" + S.sonando + "/" + S.bloqueado;
     if (cont.dataset.firma === firma) return;
     cont.dataset.firma = firma;
@@ -337,10 +374,17 @@ const Vivo = (() => {
         const h = (x.utc || "").slice(11, 16);
         const quien = x.num ? `<span class="cod">${esc(apellido(x.num))}</span>` : "";
         if (x.tipo === "audio") {
-          return `<div class="rd ${x.url === S.sonando ? "sonando" : ""}">
-            <button data-url="${esc(x.url)}" title="Escuchar">▶</button>
-            <span class="hora">${h}</span>${quien}
-            <span class="txt">radio</span></div>`;
+          const t = S.textos.get(x.url);
+          const dicho = t === "…" ? `<span class="tr cargando">transcribiendo…</span>`
+            : t ? `<span class="tr">${esc(t.es || t.texto)}${
+                    t.es ? `<em class="orig">${esc(t.texto)}</em>` : ""}</span>`
+            : "";
+          return `<div class="rd audio ${x.url === S.sonando ? "sonando" : ""}">
+            <div class="rd-cab">
+              <button data-url="${esc(x.url)}" title="Escuchar">▶</button>
+              <span class="hora">${h}</span>${quien}
+              ${dicho ? "" : `<span class="txt">radio</span>`}
+            </div>${dicho}</div>`;
         }
         return `<div class="rd texto ${claseMensaje(x)}">
           <span class="ico" title="Dirección de carrera">📋</span>
@@ -351,8 +395,45 @@ const Vivo = (() => {
     cont.querySelectorAll("button[data-url]").forEach((b) => {
       b.onclick = () => reproducir(b.dataset.url);
     });
+    // Lo que está a la vista se manda a transcribir; el resto no se toca.
+    for (const x of lista) if (x.tipo === "audio") pedirTexto(x.url);
     const db = cont.querySelector(".destrabar");
     if (db) db.onclick = destrabarAudio;
+  }
+
+  /* Transcribir y traducir la radio.
+   *
+   * La F1 manda el audio pero no el texto —lo verifiqué suscribiéndome a
+   * `Transcript` y `Subtitles`: no existen—, así que lo saca el servidor con
+   * whisper y lo traduce. Es lo único del vivo que no corre en Vercel, porque
+   * necesita el modelo en disco; en el sitio público simplemente no aparece.
+   *
+   * De a una por vez: whisper come CPU y pedir ocho juntas deja el portal
+   * pesado justo cuando hay una carrera en curso.
+   */
+  function pedirTexto(url) {
+    if (!app.apiLocal || S.textos.has(url) || S.pidiendo.has(url)) return;
+    S.pendientes.push(url);
+    S.pidiendo.add(url);
+    seguirTextos();
+  }
+
+  async function seguirTextos() {
+    if (S.transcribiendo || !S.pendientes.length) return;
+    S.transcribiendo = true;
+    const url = S.pendientes.shift();
+    S.textos.set(url, "…");
+    pintarRadios();
+    try {
+      const r = await fetch("/api/radio/texto?u=" + encodeURIComponent(url));
+      const d = await r.json();
+      S.textos.set(url, d.error ? null : d);
+    } catch {
+      S.textos.set(url, null);         // se muestra el audio pelado y listo
+    }
+    S.transcribiendo = false;
+    pintarRadios();
+    seguirTextos();
   }
 
   /* El aviso trae el número y el código del auto, que ya están en la fila, y la
@@ -834,12 +915,13 @@ const Vivo = (() => {
     S.onResize = () => { redimensionar(); };
     window.addEventListener("resize", S.onResize);
     timer = setInterval(tick, POLL_MS);
+    S.tictac = setInterval(pintarReloj, 1000);
     return d;
   }
 
   function destruir() {
     S.corriendo = false;
-    clearInterval(timer); cancelAnimationFrame(raf);
+    clearInterval(timer); clearInterval(S.tictac); cancelAnimationFrame(raf);
     if (S.onResize) window.removeEventListener("resize", S.onResize);
     if (S.relator) S.relator.parar();
     if (S.audio) { try { S.audio.pause(); } catch { /* ya */ } S.audio = null; }

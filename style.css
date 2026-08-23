@@ -663,3 +663,48 @@ body.lleno .tabla-vivo .leyenda{display:none}
 .alerta.control.amarilla{border-left-color:var(--amarillo)}
 .alerta.control.verde{border-left-color:var(--verde)}
 .alertas{animation:none}
+
+/* ---------------- el vivo en el celular ---------------- */
+.mk-reloj.detenido{opacity:.5}
+.mk-reloj.detenido::after{content:" ⏸"}
+
+@media (max-width:900px){
+  /* La cabecera del vivo pasa a dos renglones y con un orden pensado: arriba
+     el estado de la carrera, abajo los mandos. Antes se apretaba todo en uno y
+     el selector Circuito/Tabla se salía de la pantalla. */
+  .visor-cab{flex-wrap:wrap; row-gap:6px; padding:6px 10px}
+  .visor-cab .chapa-vivo{order:1}
+  .visor-cab .marcador{order:2; margin-left:auto}
+  .visor-cab .btn-lleno{order:3}
+  .visor-cab .ajustes{order:4}
+  .visor-cab .paneles{order:5; margin-left:0; flex:0 0 auto}
+  .visor-cab .btn-relato{order:6}
+  .visor-cab .estado-vivo{order:7; margin-left:auto; font-size:11px}
+  /* El GP y el circuito ya están en la portada y en el título de la pestaña. */
+  .visor-cab .vc-tit{display:none}
+  .mk-vuelta{font-size:13px}
+  .mk-reloj{font-size:11px}
+
+  .rd-mandos{flex-wrap:wrap}
+  .radio-piloto{max-width:120px}
+  .alertas{max-width:82%; font-size:11.5px}
+  .alerta{font-size:11.5px; padding:5px 9px}
+}
+@media (max-width:420px){
+  .visor-cab{gap:6px}
+  .visor-cab .btn-relato{font-size:11px; padding:3px 7px}
+  .paneles button{padding:4px 9px; font-size:11px}
+}
+
+/* ---------------- transcripción de la radio ---------------- */
+.rd.audio{flex-direction:column; align-items:stretch; gap:3px}
+.rd-cab{display:flex; align-items:center; gap:8px}
+.tr{
+  font-size:11px; color:var(--texto); line-height:1.35; padding-left:26px;
+  display:block;
+}
+.tr.cargando{color:var(--tenue); font-style:italic}
+.tr .orig{
+  display:block; font-style:normal; font-size:10px; color:var(--tenue);
+  opacity:.75; margin-top:1px;
+}
