@@ -20,6 +20,9 @@
   </a>
 
   <nav id="nav">
+    <a href="#/vivo" data-vista="vivo" class="nav-vivo" id="navVivo">
+      <span class="punto-vivo"></span>VIVO<span class="cuenta" id="navCuenta"></span>
+    </a>
     <a href="#/calendario" data-vista="calendario">Calendario</a>
     <a href="#/pilotos"    data-vista="pilotos">Pilotos</a>
     <a href="#/equipos"    data-vista="equipos">Escuderías</a>
@@ -79,6 +82,32 @@
   </footer>
 </template>
 
+<template id="tpl-vivo">
+  <div class="visor-cab">
+    <span class="chapa-vivo"><span class="punto-vivo"></span>EN VIVO</span>
+    <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
+    <span class="estado-vivo"></span>
+    <button class="btn-relato" title="Relato de radio con la voz del navegador">🔊 Relato</button>
+  </div>
+  <section class="visor">
+    <aside class="tabla">
+      <div class="tabla-cab"><span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span></div>
+      <ol class="filas"></ol>
+      <div class="leyenda">
+        <span class="lg"><i class="sw rojo"></i>a menos de 0,3 s: sobrepaso a la vista</span>
+        <span class="error-vivo"></span>
+      </div>
+    </aside>
+    <div class="pista">
+      <canvas class="lienzo"></canvas>
+      <div class="alertas"></div>
+      <div class="relato-texto"></div>
+    </div>
+  </section>
+</template>
+
+<script src="/vivo.js"></script>
+<script src="/relator.js"></script>
 <script src="/visor.js"></script>
 <script src="/app.js"></script>
 </body>

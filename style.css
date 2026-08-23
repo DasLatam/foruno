@@ -232,3 +232,86 @@ tr:hover td{background:var(--panel)}
   #barra{flex-wrap:wrap; gap:10px}
   #nav{order:3; width:100%; overflow-x:auto}
 }
+
+
+/* ---------------- vivo ---------------- */
+.nav-vivo{
+  display:flex; align-items:center; gap:7px; font-weight:700;
+  background:var(--acento); color:#fff !important;
+}
+.nav-vivo:hover{background:#c50500}
+.nav-vivo.dormido{background:var(--panel2); color:var(--tenue) !important; font-weight:600}
+.nav-vivo.dormido .punto-vivo{background:var(--tenue); animation:none}
+.punto-vivo{
+  width:8px; height:8px; border-radius:50%; background:#fff; display:inline-block;
+  animation:latir 1.4s ease-in-out infinite;
+}
+@keyframes latir{0%,100%{opacity:1}50%{opacity:.25}}
+.cuenta{font-weight:600; font-variant-numeric:tabular-nums; font-size:12px; opacity:.9}
+
+.chapa-vivo{
+  display:inline-flex; align-items:center; gap:6px; background:var(--acento);
+  color:#fff; font-weight:800; font-size:11px; letter-spacing:.5px;
+  padding:4px 9px; border-radius:5px; flex:0 0 auto;
+}
+.estado-vivo{font-size:11px; color:var(--tenue); flex:0 0 auto}
+.btn-relato{flex:0 0 auto; font-size:12px}
+.btn-relato.activo{background:var(--acento); border-color:var(--acento); color:#fff; font-weight:600}
+
+/* La fila del que viene a tiro se enciende: es lo que hay que mirar. */
+.filas li.a-tiro{background:rgba(225,6,0,.16)}
+.filas li.a-tiro .gap{color:#ff6b6b}
+.filas li.en-boxes{opacity:.6}
+.sw.rojo{background:#ff6b6b}
+.error-vivo{color:#f0cf9a; font-size:10px; margin-left:auto}
+
+.alertas{
+  position:absolute; top:12px; left:16px; display:flex; flex-direction:column;
+  gap:6px; max-width:min(420px,55%); pointer-events:none;
+}
+.alerta{
+  font-size:12.5px; padding:7px 11px; border-radius:6px;
+  background:rgba(20,25,34,.95); border-left:3px solid var(--tenue);
+  animation:entrar .25s ease-out;
+}
+.alerta.paso{border-color:var(--verde)}
+.alerta.atiro{border-color:var(--acento)}
+.alerta.abandono{border-color:var(--tenue)}
+@keyframes entrar{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+.relato-texto{
+  position:absolute; bottom:12px; left:16px; right:16px; display:flex;
+  flex-direction:column-reverse; gap:4px; pointer-events:none; max-height:34%;
+  overflow:hidden;
+}
+.relato-texto div{
+  font-size:12px; color:var(--tenue); background:rgba(11,14,19,.7);
+  padding:4px 9px; border-radius:5px; align-self:flex-start;
+}
+.relato-texto div:last-child{color:var(--texto)}
+
+/* ---------------- portada del vivo ---------------- */
+.portada{
+  flex:1 1 auto; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:20px; padding:30px; text-align:center;
+}
+.portada h1{font-size:26px; margin:0}
+.portada .que{color:var(--tenue); font-size:14px; max-width:520px; line-height:1.6}
+.boton-vivo{
+  font-size:19px; font-weight:800; letter-spacing:.5px; padding:18px 44px;
+  border-radius:12px; background:var(--acento); border:none; color:#fff;
+  display:flex; align-items:center; gap:12px; box-shadow:0 6px 26px rgba(225,6,0,.34);
+}
+.boton-vivo:hover{background:#c50500}
+.boton-vivo:disabled{background:var(--panel2); color:var(--tenue); box-shadow:none}
+.reloj-cuenta{
+  display:flex; gap:14px; font-variant-numeric:tabular-nums;
+}
+.reloj-cuenta div{
+  background:var(--panel); border:1px solid var(--borde); border-radius:10px;
+  padding:12px 18px; min-width:78px;
+}
+.reloj-cuenta b{display:block; font-size:28px; line-height:1.1}
+.reloj-cuenta span{font-size:10px; color:var(--tenue); text-transform:uppercase; letter-spacing:.6px}
+.proxima{font-size:15px}
+.proxima b{color:var(--texto)}
