@@ -2,29 +2,19 @@
   "cleanUrls": true,
   "headers": [
     {
-      "comment": "Un replay es de una sesión ya corrida: nunca cambia, así que se cachea para siempre.",
       "source": "/data/sessions/(.*)",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     },
     {
-      "comment": "El índice sí cambia cada fecha: caché corta en el navegador y algo más en el CDN.",
       "source": "/data/(index|temporadas)(.*)",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400" }
       ]
     }
   ],
   "functions": {
-    "api/live.js": {
-      "maxDuration": 30
-    }
+    "api/live.js": { "maxDuration": 30 }
   }
 }
