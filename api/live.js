@@ -56,6 +56,7 @@ const S = {
   xy: {},                   // Position.z decodificado, último punto por auto
   mensajes: [],             // RaceControlMessages
   vistos: new Set(),        // claves de mensajes ya guardados, para no duplicar
+  stints: {},               // TimingAppData.Lines: los juegos de neumáticos
   radios: [],               // TeamRadio: las comunicaciones piloto-equipo
   radiosVistas: new Set(),
 };
@@ -142,6 +143,9 @@ function aplicar(topic, contenido) {
       S.mensajes = S.mensajes.slice(-60);
       break;
     }
+    case "TimingAppData":
+      if (contenido?.Lines) fundir(S.stints, contenido.Lines);
+      break;
     case "TeamRadio": {
       // Cada captura es un mp3 servido bajo el directorio de la sesión. A
       // diferencia de los .jsonStream, estos SÍ se descargan mientras la
@@ -225,6 +229,24 @@ async function asegurar() {
 
 /* ------------------------------------------------------------ salida */
 
+/* El neumático que lleva puesto y cuántas veces paró.
+ *
+ * Cada entrada de Stints es un juego. `TotalLaps` cuenta las vueltas que tiene
+ * encima (incluidas las que ya traía si era usado). Ojo con `TyresNotChanged`:
+ * vale "1" cuando en esa parada NO se cambiaron gomas — pasa con la bandera
+ * roja, y contarla como parada infla el número. */
+function neumatico(num) {
+  const st = comoLista(S.stints[num]?.Stints);
+  if (!st.length) return null;
+  const act = st[st.length - 1];
+  return {
+    compuesto: act.Compound || null,
+    vueltas: act.TotalLaps ?? null,
+    nuevo: act.New === "true" || act.New === true,
+    paradas: st.slice(1).filter((x) => x.TyresNotChanged !== "1").length,
+  };
+}
+
 /* Estado de un piloto, quedándonos sólo con lo que el visor usa. */
 function compactar() {
   const out = {};
@@ -244,6 +266,7 @@ function compactar() {
         v: s?.Value ?? "", mejorTotal: !!s?.OverallFastest, mejorPropio: !!s?.PersonalFastest,
         segs: comoLista(s?.Segments).map((g) => g?.Status ?? 0),
       })),
+      neumatico: neumatico(num),
       mejorVuelta: l.BestLapTime?.Value ?? "",
       ultimaVuelta: l.LastLapTime?.Value ?? "",
       // La F1 califica cada vuelta cerrada: mejor de la sesión, mejor propia, o

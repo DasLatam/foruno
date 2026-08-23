@@ -447,6 +447,16 @@ async function vistaVivo() {
   };
   Vivo.usarRelator(Relator);
 
+  Ajustes.montar($(".aj-menu"));
+  // Apagar una columna cambia lo que hay que dibujar, así que se repinta al
+  // toque en vez de esperar al próximo sondeo.
+  Ajustes.alCambiar(() => { if (app.vivoActivo) Vivo.repintar(); });
+  // Un clic afuera cierra el menú: es lo que espera cualquiera.
+  document.addEventListener("click", (e) => {
+    const aj = $(".ajustes");
+    if (aj && aj.open && !aj.contains(e.target)) aj.open = false;
+  });
+
   try {
     await Vivo.montar($("#vista"), app.live, app.circuitos);
     panelesMoviles();

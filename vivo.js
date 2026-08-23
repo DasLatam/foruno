@@ -326,16 +326,26 @@ const Vivo = (() => {
       .sort((a, b) => (a.pos ?? 99) - (b.pos ?? 99));
   }
 
+  /* Los cinco compuestos, con el color que usa la F1. */
+  const GOMA = {
+    SOFT: ["B", "blanda"], MEDIUM: ["M", "media"], HARD: ["D", "dura"],
+    INTERMEDIATE: ["I", "intermedia"], WET: ["L", "lluvia"],
+  };
+
   function pintarTabla() {
     const ol = raiz.querySelector(".filas");
     const filas = ordenados();
     if (ol.children.length !== filas.length) {
+      // Dos líneas por piloto y nada más: en la primera el puesto, el código,
+      // la goma y los tiempos; en la segunda los microsectores. Con eso entran
+      // los veintipico sin scroll, que es lo que se quiere de una tabla así.
       ol.innerHTML = filas.map(() => `<li>
         <span class="pos"></span>
-        <span class="piloto"><span class="cod"></span><span class="equipo"></span></span>
+        <span class="piloto"><b class="cod"></b><i class="gom"></i><span class="est"></span></span>
         <span class="gap"></span><span class="lider"></span>
-        <span class="ritmo"><b></b><em></em></span>
-        <span class="segs"></span></li>`).join("");
+        <span class="ritmo"></span>
+        <span class="fila2"><span class="segs"></span><em class="extra"></em></span>
+      </li>`).join("");
     }
     filas.forEach((f, i) => {
       const li = ol.children[i];
@@ -343,12 +353,31 @@ const Vivo = (() => {
       li.style.borderLeftColor = "#" + d.color;
       li.querySelector(".pos").textContent = f.pos ?? "–";
       li.querySelector(".cod").textContent = d.code;
+      li.title = `${d.name} — ${d.team}`;
+
       // "Stopped" es el auto parado en pista; "Retired", el abandono ya
       // declarado. La F1 marca lo primero mucho antes que lo segundo, y para el
       // que mira son lo mismo: ese auto ya no corre.
       const fuera = f.abandono || f.detenido;
-      li.querySelector(".equipo").textContent = f.abandono ? "ABANDONÓ"
-        : f.detenido ? "DETENIDO" : f.boxes ? "EN BOXES" : d.team;
+      li.querySelector(".est").textContent = f.abandono ? "OUT"
+        : f.detenido ? "OUT" : f.boxes ? "BOX" : "";
+
+      // La goma: qué compuesto y cuántas vueltas lleva encima. Es la mitad de
+      // lo que explica un intervalo que se abre o se cierra.
+      const gom = li.querySelector(".gom");
+      const n = f.neumatico;
+      if (n?.compuesto && Ajustes.get("goma")) {
+        const [letra, nombre] = GOMA[n.compuesto] || ["?", n.compuesto];
+        gom.textContent = letra;
+        gom.className = "gom g-" + (n.compuesto || "").toLowerCase() +
+                        (n.nuevo ? "" : " usada");
+        gom.title = `${nombre}${n.nuevo ? " nueva" : " usada"}, ` +
+                    `${n.vueltas} vuelta${n.vueltas === 1 ? "" : "s"}`;
+        gom.dataset.v = n.vueltas ?? "";
+      } else {
+        gom.textContent = ""; gom.className = "gom"; gom.dataset.v = "";
+      }
+
       const iv = seg(f.intervalo);
       li.querySelector(".gap").textContent = f.pos === 1 ? "líder" : (f.intervalo || "—");
       li.querySelector(".lider").textContent = f.pos === 1 ? "" : (f.gap || "—");
@@ -359,16 +388,22 @@ const Vivo = (() => {
         iv != null && iv > 0 && iv <= CERCA && !f.boxes && !fuera);
 
       // Cómo viene girando: la última vuelta cerrada, calificada por la propia
-      // F1 con el mismo criterio que los microsectores, y cuánto le sacó o le
-      // puso a su propia mejor vuelta.
+      // F1 con el mismo criterio que los microsectores.
       const r = li.querySelector(".ritmo");
-      const t = r.querySelector("b"), delta = r.querySelector("em");
-      t.textContent = f.ultimaVuelta || "—";
+      r.textContent = f.ultimaVuelta || "—";
       r.className = "ritmo " + (f.ultMejorTotal ? "mejor-sesion"
         : f.ultMejorPropia ? "mejoro" : f.ultimaVuelta ? "sin-mejorar" : "");
+
+      // En la segunda línea, a la derecha: cuánto le puso a su mejor vuelta y
+      // cuántas veces paró. Lo de contexto, en chico.
       const ult = mm(f.ultimaVuelta), mejor = mm(f.mejorVuelta);
-      delta.textContent = (ult != null && mejor != null && ult > mejor)
+      const delta = (ult != null && mejor != null && ult > mejor)
         ? "+" + (ult - mejor).toFixed(3) : "";
+      const paradas = n && n.paradas != null && Ajustes.get("goma")
+        ? `${n.paradas}p` : "";
+      const vueltas = n?.vueltas != null && Ajustes.get("goma") ? `${n.vueltas}v` : "";
+      li.querySelector(".extra").textContent =
+        [vueltas, paradas, delta].filter(Boolean).join(" · ");
 
       const segs = li.querySelector(".segs");
       const todos = f.sectores.flatMap((s) => s.segs);
@@ -388,12 +423,12 @@ const Vivo = (() => {
 
   /* --------------------------------------- ubicar sin GPS */
 
-  /* La F1 no manda `Position.z` (las coordenadas GPS) sin autenticación: se
-     suscribe uno y el servidor simplemente lo omite. Pero sí manda, vuelta a
-     vuelta, en qué microsector va cada auto — 24 tramos por vuelta. Contando
-     los tramos ya cubiertos sale en qué punto del giro está, y eso alcanza para
-     dibujarlo sobre el trazado. Es aproximado y hay que decirlo: la resolución
-     es de un tramo, unos pocos segundos de pista. */
+  /* La F1 no manda `Position.z` (las coordenadas GPS) sin autenticación: uno se
+     suscribe y el servidor simplemente lo omite. Pero sí manda, vuelta a
+     vuelta, en qué microsector va cada auto — 24 tramos por vuelta. Con eso
+     alcanza para ubicarlo sobre el trazado. Es aproximado y hay que decirlo:
+     la resolución es de un tramo, unos segundos de pista. */
+
   /* Dónde está el auto en la vuelta, como fracción de 0 a 1.
    *
    * Contar microsectores y reiniciar el cronómetro en cada cambio se ve a los
@@ -680,6 +715,9 @@ const Vivo = (() => {
 
   const usarRelator = (r) => { S.relator = r; };
 
-  return { montar, destruir, usarRelator, apellido, ficha, ordenados,
+  // Repintar a pedido: lo usa el menú de ajustes, que cambia qué se dibuja.
+  const repintar = () => { if (raiz) { pintarTabla(); redimensionar(); } };
+
+  return { montar, destruir, usarRelator, apellido, ficha, ordenados, repintar,
            estado: () => S.pilotos };
 })();

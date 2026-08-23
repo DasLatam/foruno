@@ -97,24 +97,28 @@
       <button data-panel="tabla">Tabla</button>
     </div>
     <button class="btn-relato" title="Relato de radio con la voz del navegador">🔊 Relato</button>
+    <details class="ajustes">
+      <summary title="Qué mostrar">⚙</summary>
+      <div class="aj-menu"></div>
+    </details>
   </div>
   <section class="visor">
     <aside class="tabla tabla-vivo">
       <div class="tabla-cab"><span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span></div>
       <ol class="filas"></ol>
-      <div class="leyenda">
-        <span class="lg"><i class="sw rojo"></i>a menos de 0,3 s: sobrepaso a la vista</span>
-        <span class="lg"><i class="sw violeta"></i>mejor de la sesión</span>
-        <span class="lg"><i class="sw verde"></i>mejoró su marca</span>
-        <span class="lg"><i class="sw amarillo"></i>sin mejorar</span>
-        <span class="lg" title="La F1 no publica las coordenadas GPS sin suscripción. La posición en el mapa se deduce del microsector en que va cada auto: 24 tramos por vuelta.">📍 posición estimada por microsector</span>
+      <div class="leyenda" title="Rojo: a menos de 0,3 s del de adelante. Violeta: mejor vuelta de la sesión. Verde: mejoró su marca. Amarillo: no mejoró. La posición en el mapa se estima por microsector — la F1 no publica el GPS sin suscripción.">
+        <span class="lg"><i class="sw rojo"></i>0,3 s</span>
+        <span class="lg"><i class="sw violeta"></i>sesión</span>
+        <span class="lg"><i class="sw verde"></i>mejoró</span>
+        <span class="lg"><i class="sw amarillo"></i>no</span>
+        <span class="lg">📍 estimada</span>
         <span class="error-vivo"></span>
       </div>
-      <details class="cc-caja relato-caja" open hidden>
+      <details class="cc-caja relato-caja" hidden>
         <summary>Relato</summary>
         <div class="relato-texto"></div>
       </details>
-      <details class="cc-caja radio-caja" open>
+      <details class="cc-caja radio-caja">
         <summary>
           <span>Radio de</span>
           <select class="radio-piloto" title="De quién escuchar las comunicaciones"></select>
@@ -135,6 +139,7 @@
   </section>
 </template>
 
+<script src="/ajustes.js"></script>
 <script src="/vivo.js"></script>
 <script src="/relator.js"></script>
 <script src="/visor.js"></script>
