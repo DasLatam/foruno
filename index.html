@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ForUno — la Fórmula 1 en telemetría</title>
+<meta name="description" content="Mirá cualquier sesión de Fórmula 1 sobre el trazado real del circuito: posiciones en vivo, intervalos, microsectores y los campeonatos de pilotos y escuderías.">
+<meta property="og:title" content="ForUno — la Fórmula 1 en telemetría">
+<meta property="og:description" content="Cada sesión de F1 sobre el trazado real del circuito, con intervalos y microsectores.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header id="barra">
+  <a class="marca" href="#/calendario">
+    <span class="logo">F1</span>
+    <span class="nombre">ForUno</span>
+  </a>
+
+  <nav id="nav">
+    <a href="#/calendario" data-vista="calendario">Calendario</a>
+    <a href="#/pilotos"    data-vista="pilotos">Pilotos</a>
+    <a href="#/equipos"    data-vista="equipos">Escuderías</a>
+  </nav>
+
+  <div class="derecha">
+    <select id="temporada" title="Temporada"></select>
+  </div>
+</header>
+
+<main id="vista"></main>
+
+<div id="carga" class="carga oculto">
+  <div class="caja">
+    <h2 id="cargaTitulo">Cargando</h2>
+    <p id="cargaMsg">…</p>
+    <div class="barra-prog"><div id="cargaBarra"></div></div>
+  </div>
+</div>
+
+<template id="tpl-visor">
+  <div class="visor-cab">
+    <a class="volver" href="#/calendario" title="Volver al calendario">←</a>
+    <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
+    <select class="vc-salto" title="Saltar a otra sesión"></select>
+  </div>
+  <section class="visor">
+    <aside class="tabla">
+      <div class="tabla-cab">
+        <span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span>
+      </div>
+      <ol class="filas"></ol>
+      <div class="leyenda">
+        <span class="lg"><i class="sw verde"></i>mejoró</span>
+        <span class="lg"><i class="sw violeta"></i>mejor de la sesión</span>
+        <span class="lg"><i class="sw amarillo"></i>sin mejorar</span>
+        <span class="lg"><i class="sw pit"></i>boxes</span>
+      </div>
+    </aside>
+    <div class="pista">
+      <canvas class="lienzo"></canvas>
+      <div class="avisos"></div>
+      <div class="reloj"></div>
+      <button class="toggle-seg" title="Mostrar u ocultar las barras de microsectores sobre la pista">microsectores</button>
+    </div>
+  </section>
+  <footer class="repro">
+    <button class="play icono" title="Reproducir o pausar (espacio)">▶</button>
+    <div class="tiempo"><span class="t-act">0:00</span> / <span class="t-tot">0:00</span></div>
+    <input type="range" class="scrub" min="0" max="1000" value="0" step="1">
+    <div class="velocidades">
+      <button data-vel="1" class="vel activa">1×</button>
+      <button data-vel="2" class="vel">2×</button>
+      <button data-vel="4" class="vel">4×</button>
+      <button data-vel="10" class="vel">10×</button>
+    </div>
+  </footer>
+</template>
+
+<script src="/visor.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+:root{
+  --fondo:#0b0e13; --panel:#141922; --panel2:#1b2230; --borde:#273043;
+  --texto:#e8ecf4; --tenue:#8b96ab; --acento:#e10600;
+  --amarillo:#f5c518; --verde:#37d67a; --violeta:#b44cff; --pit:#5a6478;
+  --asfalto:#2a3348; --pista:#39435a;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--fondo); color:var(--texto);
+  font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.oculto{display:none !important}
+a{color:inherit; text-decoration:none}
+
+/* ---------------- barra ---------------- */
+#barra{
+  display:flex; align-items:center; gap:20px; padding:10px 18px;
+  background:var(--panel); border-bottom:1px solid var(--borde); flex:0 0 auto;
+}
+.marca{display:flex; align-items:center; gap:10px; flex:0 0 auto}
+.logo{
+  background:var(--acento); color:#fff; font-weight:800; font-style:italic;
+  padding:3px 9px; border-radius:4px; letter-spacing:-1px; font-size:18px;
+}
+.nombre{font-weight:700; font-size:17px; letter-spacing:-.3px}
+#nav{display:flex; gap:4px; flex:1 1 auto}
+#nav a{
+  padding:7px 13px; border-radius:6px; font-size:14px; color:var(--tenue);
+  white-space:nowrap;
+}
+#nav a:hover{background:var(--panel2); color:var(--texto)}
+#nav a.activa{background:var(--panel2); color:var(--texto); font-weight:600}
+.derecha{flex:0 0 auto}
+select,button{
+  background:var(--panel2); color:var(--texto); border:1px solid var(--borde);
+  border-radius:6px; padding:7px 10px; font-size:13px; font-family:inherit; cursor:pointer;
+}
+button:hover{background:#232c3d}
+button:disabled{opacity:.5; cursor:default}
+:focus-visible{outline:2px solid var(--acento); outline-offset:1px}
+
+#vista{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden}
+
+/* ---------------- vistas con scroll ---------------- */
+.scroll{overflow-y:auto; padding:22px 18px 40px}
+.ancho{max-width:1080px; margin:0 auto}
+h1{font-size:22px; margin:0 0 4px}
+.sub{color:var(--tenue); font-size:13px; margin:0 0 22px; text-align:justify; hyphens:auto}
+
+/* ---------------- calendario ---------------- */
+.gps{display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.gp{
+  background:var(--panel); border:1px solid var(--borde); border-radius:9px;
+  padding:13px 15px; display:flex; flex-direction:column; gap:9px;
+}
+.gp.futuro{opacity:.5}
+.gp-cab{display:flex; align-items:baseline; gap:9px}
+.gp-bandera{font-size:19px; line-height:1}
+.gp-nombre{font-weight:650; font-size:14px; flex:1 1 auto}
+.gp-fecha{font-size:11px; color:var(--tenue); white-space:nowrap}
+.gp-circ{font-size:11px; color:var(--tenue); margin-top:-4px}
+.podio{display:flex; flex-direction:column; gap:3px; font-size:12px}
+.podio div{display:flex; gap:7px; align-items:center}
+.podio .p{width:14px; color:var(--tenue); font-variant-numeric:tabular-nums}
+.podio .c{font-weight:650}
+.podio .e{color:var(--tenue); font-size:11px}
+.gp-ses{display:flex; flex-wrap:wrap; gap:5px; margin-top:2px}
+.chip{
+  font-size:11px; padding:3px 8px; border-radius:20px; border:1px solid var(--borde);
+  background:var(--panel2); color:var(--tenue);
+}
+.chip.jugable{border-color:#3a4b6b; color:var(--texto); cursor:pointer}
+.chip.jugable:hover{background:#2b3750}
+.chip.res{cursor:pointer}
+.chip.res:hover{background:#2b3750; color:var(--texto)}
+
+/* ---------------- tablas ---------------- */
+table{width:100%; border-collapse:collapse; font-size:13px}
+th{
+  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--tenue); font-weight:600; padding:8px 10px;
+  border-bottom:1px solid var(--borde); position:sticky; top:0; background:var(--fondo);
+}
+td{padding:8px 10px; border-bottom:1px solid #1c2331}
+tr:hover td{background:var(--panel)}
+.num{text-align:right; font-variant-numeric:tabular-nums}
+.equipo-barra{border-left:4px solid transparent}
+.pts{font-weight:700}
+.cod{font-weight:700}
+.tenue{color:var(--tenue)}
+.medalla-1{color:#f5c518} .medalla-2{color:#c8ccd4} .medalla-3{color:#cd7f32}
+
+/* ---------------- visor ---------------- */
+.visor-cab{
+  display:flex; align-items:center; gap:12px; padding:8px 16px;
+  background:var(--panel); border-bottom:1px solid var(--borde); flex:0 0 auto;
+}
+.volver{
+  width:30px; height:30px; border-radius:6px; background:var(--panel2);
+  border:1px solid var(--borde); display:flex; align-items:center;
+  justify-content:center; flex:0 0 auto; font-size:15px;
+}
+.volver:hover{background:#232c3d}
+.vc-tit{display:flex; flex-direction:column; min-width:0; flex:1 1 auto}
+.vc-gp{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.vc-ses{font-size:11px; color:var(--tenue)}
+.vc-salto{max-width:320px; flex:0 0 auto}
+
+.visor{flex:1 1 auto; display:flex; min-height:0}
+.tabla{
+  flex:0 0 400px; background:var(--panel); border-right:1px solid var(--borde);
+  display:flex; flex-direction:column; min-height:0;
+}
+.tabla-cab, .filas li{
+  display:grid; grid-template-columns:26px 1fr 66px 66px; gap:6px; align-items:center;
+}
+.tabla-cab{
+  padding:8px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--tenue); border-bottom:1px solid var(--borde); flex:0 0 auto;
+}
+.der{text-align:right}
+.filas{
+  list-style:none; margin:0; padding:4px 0; overflow-y:auto; flex:1 1 auto;
+  display:flex; flex-direction:column;
+}
+.filas li{
+  padding:5px 10px 7px; border-left:4px solid transparent; font-size:13px;
+  position:relative;
+}
+.filas li:hover{background:var(--panel2)}
+.filas li.fuera{opacity:.4}
+.pos{font-variant-numeric:tabular-nums; color:var(--tenue); font-size:12px; text-align:right}
+.piloto{display:flex; align-items:center; gap:7px; min-width:0}
+.equipo{font-size:10px; color:var(--tenue); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.neu{
+  font-size:9px; font-weight:800; width:16px; height:16px; border-radius:50%;
+  display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
+  border:2px solid currentColor; background:#0b0e13;
+}
+.neu.SOFT{color:#e10600} .neu.MEDIUM{color:#f5c518} .neu.HARD{color:#e8ecf4}
+.neu.INTERMEDIATE{color:#37d67a} .neu.WET{color:#3b9dff} .neu.UNKNOWN{color:#5a6478}
+.gap,.lider{text-align:right; font-variant-numeric:tabular-nums; font-size:12px}
+.gap{font-weight:600}
+.lider{color:var(--tenue)}
+
+/* Barras de microsectores: una tira por piloto, debajo de su fila. */
+.segs{
+  grid-column:1 / -1; display:flex; gap:1px; height:5px; margin-top:5px;
+}
+.segs i{flex:1 1 0; background:var(--asfalto); border-radius:1px}
+.segs i.s1{background:var(--amarillo)}
+.segs i.s2{background:var(--verde)}
+.segs i.s3{background:var(--violeta)}
+.segs i.s4{background:var(--pit)}
+/* El borde entre sectores, para que se lea dónde termina cada uno. */
+.segs i.corte{margin-right:4px}
+
+.leyenda{
+  padding:8px 10px; border-top:1px solid var(--borde); font-size:11px;
+  color:var(--tenue); flex:0 0 auto; display:flex; flex-wrap:wrap; gap:10px;
+}
+.lg{display:inline-flex; align-items:center; gap:5px}
+.sw{width:9px; height:9px; border-radius:2px; display:inline-block}
+.sw.verde{background:var(--verde)} .sw.violeta{background:var(--violeta)}
+.sw.amarillo{background:var(--amarillo)} .sw.pit{background:var(--pit)}
+
+.pista{flex:1 1 auto; position:relative; min-width:0}
+.lienzo{width:100%; height:100%; display:block}
+.reloj{
+  position:absolute; top:12px; right:16px; font-variant-numeric:tabular-nums;
+  font-size:13px; color:var(--tenue); background:rgba(11,14,19,.75);
+  padding:5px 10px; border-radius:6px; border:1px solid var(--borde);
+}
+.toggle-seg{
+  position:absolute; bottom:12px; right:16px; font-size:11px; padding:5px 9px;
+  opacity:.75;
+}
+.toggle-seg.activa{background:var(--acento); border-color:var(--acento); color:#fff; opacity:1}
+.avisos{
+  position:absolute; top:12px; left:16px; display:flex; flex-direction:column; gap:6px;
+  max-width:min(460px,55%);
+}
+.msg{
+  font-size:12px; padding:6px 10px; border-radius:6px; background:rgba(20,25,34,.92);
+  border-left:3px solid var(--tenue); line-height:1.35;
+}
+.msg.YELLOW,.msg.DOUBLEYELLOW{border-color:var(--amarillo)}
+.msg.RED{border-color:var(--acento)}
+.msg.GREEN{border-color:var(--verde)}
+.msg.CHEQUERED{border-color:#e8ecf4}
+.msg.SAFETYCAR{border-color:#f5a623}
+
+.repro{
+  flex:0 0 auto; display:flex; align-items:center; gap:14px; padding:10px 16px;
+  background:var(--panel); border-top:1px solid var(--borde);
+}
+.icono{width:38px; height:38px; border-radius:50%; font-size:14px; padding:0; flex:0 0 auto}
+.tiempo{font-size:12px; color:var(--tenue); font-variant-numeric:tabular-nums; flex:0 0 auto}
+.scrub{flex:1 1 auto; accent-color:var(--acento); cursor:pointer}
+.velocidades{display:flex; gap:4px; flex:0 0 auto}
+.vel{padding:5px 9px; font-size:12px}
+.vel.activa{background:var(--acento); border-color:var(--acento); color:#fff; font-weight:600}
+
+/* ---------------- overlay ---------------- */
+.carga{
+  position:fixed; inset:0; background:rgba(11,14,19,.93); display:flex;
+  align-items:center; justify-content:center; z-index:50;
+}
+.caja{
+  background:var(--panel); border:1px solid var(--borde); border-radius:10px;
+  padding:24px 28px; max-width:470px; width:calc(100% - 32px);
+}
+.caja h2{margin:0 0 8px; font-size:17px}
+.caja p{margin:0 0 14px; color:var(--tenue); font-size:13px; text-align:justify; hyphens:auto}
+.barra-prog{height:6px; background:var(--panel2); border-radius:3px; overflow:hidden}
+#cargaBarra{height:100%; width:0; background:var(--acento); transition:width .4s}
+
+.aviso-datos{
+  margin-top:18px; padding:11px 14px; border-radius:8px;
+  background:#2a2212; border:1px solid #5a4520; color:#f0cf9a;
+  font-size:12.5px; line-height:1.5; text-align:justify; hyphens:auto;
+}
+.aviso-datos strong{color:#ffd89a}
+
+.vacio{color:var(--tenue); font-size:13px; padding:30px 0; text-align:center}
+
+@media (max-width:900px){
+  .visor{flex-direction:column-reverse}
+  .tabla{flex:0 0 48%; border-right:none; border-top:1px solid var(--borde)}
+  #barra{flex-wrap:wrap; gap:10px}
+  #nav{order:3; width:100%; overflow-x:auto}
+}
