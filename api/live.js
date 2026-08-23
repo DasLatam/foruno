@@ -23,11 +23,17 @@ const UA = { "User-Agent": "BestHTTP", "Accept-Encoding": "identity" };
 // Sin esto la F1 devuelve la respuesta de un CDN cacheada y el vivo se atrasa.
 const NOCACHE = { ...UA, "Cache-Control": "no-cache" };
 
+/* La F1 anuncia la sesión que viene en SessionInfo mucho antes de abrir la
+   transmisión, y hasta que la abre los .jsonStream no existen: contesta 403,
+   no 404. Eso no es una falla, es "todavía no", y hay que decirlo distinto. */
+class NoPublicado extends Error {}
+
 async function traer(ruta, desde) {
   const cab = { ...NOCACHE };
   if (desde > 0) cab.Range = `bytes=${desde}-`;
   const r = await fetch(BASE + ruta, { headers: cab });
   if (r.status === 416) return { texto: "", fin: desde };      // todavía no creció
+  if (r.status === 403 || r.status === 404) throw new NoPublicado(ruta);
   if (!r.ok && r.status !== 206) throw new Error(`${ruta}: HTTP ${r.status}`);
   const texto = await r.text();
   return { texto, fin: desde + Buffer.byteLength(texto, "utf8") };
@@ -88,6 +94,33 @@ function comoLista(x) {
   return [];
 }
 
+/* StartDate viene sin zona ("2026-08-23T15:00:00") y el huso aparte, en
+   GmtOffset. Si el navegador lo parsea solo lo toma como hora local suya y la
+   cuenta regresiva queda corrida las horas que haya de diferencia. */
+function aUTC(fechaLocal, gmt) {
+  if (!fechaLocal) return null;
+  const m = /^(-)?(\d+):(\d+):(\d+)$/.exec(gmt || "00:00:00");
+  const off = m ? (m[1] ? -1 : 1) * (+m[2] * 3600 + +m[3] * 60 + +m[4]) : 0;
+  const t = Date.parse(fechaLocal.replace(/Z$/, "") + "Z");   // se lee como UTC...
+  return Number.isFinite(t) ? new Date(t - off * 1000).toISOString() : null;  // ...y se corrige
+}
+
+/* ¿La F1 ya abrió el stream de esta sesión?
+ *
+ * Es la única señal que sirve. SessionStatus se queda en "Inactive" hasta el
+ * semáforo, pero los archivos empiezan a escribirse antes: con los autos en la
+ * grilla y en la vuelta de formación ya hay posiciones para mostrar. Y al
+ * revés, entre sesiones el SessionInfo ya apunta a la siguiente sin que exista
+ * un solo byte. Un Range de un byte contesta en milisegundos y no miente. */
+async function yaAbrio(path) {
+  if (!path) return false;
+  try {
+    const r = await fetch(BASE + path + "TimingData.jsonStream",
+                          { headers: { ...NOCACHE, Range: "bytes=0-0" } });
+    return r.ok || r.status === 206;
+  } catch { return false; }
+}
+
 async function descubrir() {
   const [estado, info] = await Promise.all([
     fetch(BASE + "StreamingStatus.json", { headers: NOCACHE }).then((r) => r.text()),
@@ -98,11 +131,14 @@ async function descubrir() {
   return {
     streaming: st.Status,                 // "Available" | "Offline"
     path: si.Path || null,
+    abierto: await yaAbrio(si.Path),
     sesion: {
       key: si.Key, nombre: si.Name, tipo: si.Type,
       gp: si.Meeting?.Name, circuito: si.Meeting?.Circuit?.ShortName,
       pais: si.Meeting?.Country?.Name,
       inicio: si.StartDate, fin: si.EndDate, gmt: si.GmtOffset,
+      inicioUTC: aUTC(si.StartDate, si.GmtOffset),
+      finUTC: aUTC(si.EndDate, si.GmtOffset),
       estado: si.SessionStatus,           // Inprogress | Finished | Finalised | Ends
     },
   };
@@ -129,6 +165,11 @@ function compactar(lineas, posiciones) {
       })),
       mejorVuelta: l.BestLapTime?.Value ?? "",
       ultimaVuelta: l.LastLapTime?.Value ?? "",
+      // La propia F1 califica cada vuelta cerrada: si fue la mejor de la
+      // sesión, si fue la mejor del piloto, o ninguna de las dos. Es el mismo
+      // criterio de los microsectores, pero de la vuelta entera.
+      ultMejorTotal: !!l.LastLapTime?.OverallFastest,
+      ultMejorPropia: !!l.LastLapTime?.PersonalFastest,
       xy: posiciones[num] || null,
     };
   }
@@ -194,6 +235,12 @@ module.exports = async (req, res) => {
     cuerpo.ts = t.registros.length ? t.registros[t.registros.length - 1][0] : null;
     res.status(200).json(cuerpo);
   } catch (e) {
+    // "Todavía no salió al aire" es un estado normal, no un 502: el front
+    // tiene que poder mostrar la cuenta regresiva en vez de un error.
+    if (e instanceof NoPublicado) {
+      return res.status(200).json({ aunNo: true, pilotos: {}, t: 0, p: 0,
+                                    estadoSesion: null });
+    }
     res.status(502).json({ error: String(e.message || e) });
   }
 };

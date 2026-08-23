@@ -22,6 +22,7 @@ const app = {
   vivoActivo: false,
   circuitos: null,
   live: null,          // último estado de /api/live
+  timerBanner: 0,
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -41,13 +42,23 @@ function overlay(titulo, msg, pct) {
   $("#cargaBarra").style.width = (pct ?? 0) + "%";
 }
 
-/* OpenF1 no publica los resultados de todas las fechas. Donde faltan, los
-   puntos salen del propio replay y el sitio lo dice: un campeonato con dos
-   carreras en cero seria peor, pero hacerlo pasar por dato oficial tambien. */
+/* Tres cosas distintas que el usuario merece que no se mezclen: fechas que no
+   se corrieron, fechas sin dato en OpenF1, y puntos derivados del replay. */
 function notaEstimadas() {
   const e = app.indice.estimadas || [];
   const f = app.indice.faltantes || [];
+  // Vienen como "Sakhir Race": diciendo "las fechas de", el "Race" sobra.
+  const nom = (x) => esc(x.replace(/ Race$/, "").replace(/ Sprint$/, " (sprint)"));
+  const susp = (app.indice.suspendidas || []).map(nom);
   let html = "";
+  if (susp.length) {
+    const varias = susp.length > 1;
+    html += `<p class="sub" style="margin-top:14px">${varias ? "Las fechas" : "La fecha"}
+      de <b>${susp.join("</b> y <b>")}</b> ${varias ? "fueron suspendidas" :
+      "fue suspendida"} y no llegaron a disputarse, así que no reparten puntos.
+      No es que falte el dato: no hubo carrera. La tabla es la del campeonato
+      tal como se corrió.</p>`;
+  }
   if (f.length) {
     html += `<p class="aviso-datos"><strong>Este campeonato no está completo.</strong>
       OpenF1 no tiene ningún dato de ${f.map(esc).join(" ni de ")} —ni resultados,
@@ -86,10 +97,43 @@ async function detectarApi() {
 
 /* ------------------------------------------------------------ vistas */
 
+/* El botón grande de la portada: enciende cuando hay sesión al aire y, cuando
+   no, es la cuenta regresiva a la próxima. Es la puerta de entrada al vivo, así
+   que va arriba de todo y ocupa lugar. */
+function bannerVivo() {
+  const si = app.live?.sesion;
+  if (hayVivo(app.live)) {
+    const previa = faseDe(app.live) === "previa";
+    return `<a class="banner-vivo al-aire" href="#/vivo">
+      <span class="boton-vivo grande"><span class="punto-vivo"></span> VIVO</span>
+      <span class="bv-txt"><b>${esc(si.gp)} — ${esc(si.nombre)}</b>
+        <em>${esc(si.circuito)} · ${previa
+          ? "los autos ya están en pista, previa a la largada"
+          : "entrá a ver los autos en pista"}</em></span>
+    </a>`;
+  }
+  const prox = proximaSesion();
+  if (!prox) return "";
+  return `<a class="banner-vivo" href="#/vivo">
+    <span class="boton-vivo grande" data-apagado><span class="punto-vivo"></span> VIVO</span>
+    <span class="bv-txt"><b>${prox.gp.bandera} ${esc(prox.gp.nombre)} — ${esc(prox.s.nombre)}</b>
+      <em>empieza en <span id="bvCuenta">${cuentaLarga(prox.t - Date.now())}</span></em></span>
+  </a>`;
+}
+
+function cuentaLarga(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60), g = s % 60;
+  const dd = (n) => String(n).padStart(2, "0");
+  return d ? `${d} d ${dd(h)}:${dd(m)}:${dd(g)}` : `${dd(h)}:${dd(m)}:${dd(g)}`;
+}
+
 function vistaCalendario() {
   const gps = app.indice.gps;
   const html = `
     <div class="scroll"><div class="ancho">
+      ${bannerVivo()}
       <h1>Temporada ${app.temporada}</h1>
       <p class="sub">Cada fecha con su podio y sus sesiones. Las que tienen replay
         se abren en el visor: el circuito real, los autos moviéndose y la tabla de
@@ -103,6 +147,16 @@ function vistaCalendario() {
   $("#vista").querySelectorAll("[data-gp]").forEach((b) => {
     b.onclick = () => { location.hash = "#/gp/" + b.dataset.gp; };
   });
+
+  const prox = proximaSesion();
+  clearInterval(app.timerBanner);
+  if (prox && !hayVivo(app.live)) {
+    app.timerBanner = setInterval(() => {
+      const el = $("#bvCuenta");
+      if (!el) return clearInterval(app.timerBanner);
+      el.textContent = cuentaLarga(prox.t - Date.now());
+    }, 1000);
+  }
 }
 
 function tarjetaGP(gp) {
@@ -246,15 +300,68 @@ function proximaSesion() {
       if (t > ahora && (!mejor || t < mejor.t)) mejor = { t, gp, s };
     }
   }
+  // La F1 anuncia la sesión que viene en su propio SessionInfo, y le gana al
+  // calendario de OpenF1 cuando hay cambio de horario a último momento.
+  const f1 = app.live?.sesion;
+  const t = Date.parse(f1?.inicioUTC || "");
+  if (Number.isFinite(t) && t > ahora && (!mejor || t < mejor.t)) {
+    mejor = { t, gp: { bandera: "🏁", nombre: f1.gp || "Fórmula 1" },
+              s: { nombre: f1.nombre, date_start: new Date(t).toISOString() } };
+  }
   return mejor;
 }
 
-/* Una sesión está al aire si la F1 la marca en curso. "Ends"/"Finalised"
-   significan que ya terminó aunque el archivo siga publicado. */
+/* Hay algo para mostrar si la F1 ya abrió el stream de la sesión.
+ *
+ * Lo que manda es `abierto` (el back se fija si el .jsonStream existe), no el
+ * SessionStatus: ese se queda en "Inactive" hasta el semáforo, y para entonces
+ * los autos ya vienen de la vuelta de formación y hace rato que hay actividad
+ * que mostrar. "Ends"/"Finalised" son el otro extremo: ya terminó.
+ */
+const MUERTOS = ["ends", "finalised"];
 function hayVivo(live) {
-  if (!live || !live.path) return false;
-  const e = (live.sesion?.estado || "").toLowerCase();
-  return live.streaming === "Available" && !["ends", "finalised"].includes(e);
+  if (!live || !live.path || live.streaming !== "Available") return false;
+  if (MUERTOS.includes((live.sesion?.estado || "").toLowerCase())) return false;
+  return !!live.abierto;
+}
+
+/* Antes del semáforo la F1 no dice "Started" pero ya hay autos en pista. Se
+   rotula distinto para que no parezca que la carrera arrancó. */
+function faseDe(live) {
+  const e = (live?.sesion?.estado || "").toLowerCase();
+  if (!e || e === "inactive") {
+    const t0 = Date.parse(live?.sesion?.inicioUTC || "");
+    return Number.isFinite(t0) && Date.now() < t0 ? "previa" : "arrancando";
+  }
+  return e;
+}
+
+/* La previa: está anunciada pero la transmisión todavía no abrió.
+ *
+ * La ventana es ancha a propósito. La F1 abre el feed bastante antes de largar
+ * —el sprint de Zandvoort lo abrió 45 min antes, con los autos yendo a la
+ * grilla— así que desde una hora antes ya conviene estar mirando seguido y
+ * mostrando la previa, en vez de saltar de golpe de la cuenta regresiva a los
+ * autos corriendo. */
+const PREVIA_MIN = 75;
+function porSalir(live) {
+  const t0 = Date.parse(live?.sesion?.inicioUTC || "");
+  return Number.isFinite(t0) && Date.now() >= t0 - PREVIA_MIN * 60000 &&
+         Date.now() <= t0 + 30 * 60000 && !MUERTOS.includes(
+           (live.sesion?.estado || "").toLowerCase());
+}
+
+/* La grilla de partida sale de la clasificación del mismo GP, que ya está en
+   el índice. No contempla penalizaciones aplicadas después, y lo dice. */
+function grillaDePartida() {
+  const si = app.live?.sesion;
+  if (!si || !app.indice) return null;
+  const gp = app.indice.gps.find((g) => g.nombre === si.gp);
+  if (!gp) return null;
+  const clasi = [...gp.sesiones].reverse()
+    .find((x) => x.tipo === "Qualifying" && x.resultado?.length);
+  if (!clasi) return null;
+  return { clasi, filas: [...clasi.resultado].sort((a, b) => a.pos - b.pos) };
 }
 
 async function consultarVivo() {
@@ -317,61 +424,138 @@ async function vistaVivo() {
 
   try {
     await Vivo.montar($("#vista"), app.live, app.circuitos);
+    panelesMoviles();
   } catch (e) {
+    app.vivoActivo = false;
+    // Que la F1 no haya abierto todavía el stream no es un error del visor.
+    if (e.aunNo) return portadaEspera();
     $("#vista").innerHTML = `<div class="scroll"><div class="ancho">
       <h1>No pude enganchar el vivo</h1>
       <p class="sub">${esc(e.message)}</p></div></div>`;
   }
 }
 
-/* Sin sesión al aire: cuenta regresiva a la próxima. */
+/* Sin sesión al aire. Dos situaciones muy distintas: falta mucho (cuenta
+   regresiva) o está por largar (previa, con la grilla de partida). */
 function portadaEspera() {
-  const prox = proximaSesion();
-  const ultima = [...app.indice.gps].reverse()
-    .flatMap((g) => g.sesiones.filter((s) => s.replay).map((s) => ({ g, s })))
-    .shift();
+  const arrancando = porSalir(app.live);
+  const prox = arrancando ? null : proximaSesion();
+  // La más reciente de todas, no la primera del último GP: recorrer los GPs al
+  // revés no alcanza, adentro las sesiones siguen en orden y salía la Práctica 1.
+  const ultima = app.indice.gps
+    .flatMap((g) => g.sesiones.filter((x) => x.replay).map((x) => ({ g, s: x })))
+    .sort((a, b) => Date.parse(b.s.date_start) - Date.parse(a.s.date_start))[0];
+  const si = app.live?.sesion;
 
   $("#vista").innerHTML = `
-    <div class="portada">
-      <h1>No hay ninguna sesión en pista ahora</h1>
-      ${prox ? `
-        <p class="proxima">La próxima es
-          <b>${prox.gp.bandera} ${esc(prox.gp.nombre)} — ${esc(prox.s.nombre)}</b><br>
-          ${new Date(prox.s.date_start).toLocaleString("es-AR",
-            { weekday: "long", day: "2-digit", month: "long", hour: "2-digit",
-              minute: "2-digit" })} (hora de Argentina)</p>
-        <div class="reloj-cuenta" id="cuenta"></div>` :
-        `<p class="que">No queda ninguna sesión en el calendario de la temporada.</p>`}
-      <button class="boton-vivo" disabled>
-        <span class="punto-vivo"></span> ESPERANDO SEÑAL
+    <div class="scroll"><div class="portada">
+      <button class="boton-vivo grande" disabled>
+        <span class="punto-vivo"></span> VIVO
+        <em>${arrancando ? "esperando la señal" : "sin señal"}</em>
       </button>
-      <p class="que">Cuando la sesión arranque, este botón se enciende solo y vas a ver
-        el circuito con los autos en tiempo real, la tabla con los intervalos, el aviso
-        cuando alguien se pone a menos de 0,3 s del de adelante y —si lo querés— el
-        relato en audio.</p>
+      ${arrancando ? `
+        <h1>${esc(si.gp)} — ${esc(si.nombre)}</h1>
+        <div class="reloj-cuenta" id="cuenta"></div>
+        <p class="que">La F1 abre su transmisión de tiempo real un rato antes de
+          largar —en el sprint de este fin de semana fueron 45 minutos—. En cuanto
+          aparezca, esto se enciende solo y vas a ver los autos yendo a la grilla.</p>
+        ${gridHTML()}` : `
+        <h1>No hay ninguna sesión en pista ahora</h1>
+        ${prox ? `
+          <p class="proxima">La próxima es
+            <b>${prox.gp.bandera} ${esc(prox.gp.nombre)} — ${esc(prox.s.nombre)}</b><br>
+            ${new Date(prox.s.date_start).toLocaleString("es-AR",
+              { weekday: "long", day: "2-digit", month: "long", hour: "2-digit",
+                minute: "2-digit" })} (hora de Argentina)</p>
+          <div class="reloj-cuenta" id="cuenta"></div>` :
+          `<p class="que">No queda ninguna sesión en el calendario de la temporada.</p>`}
+        <p class="que">Cuando la sesión arranque, este botón se enciende solo: el
+          circuito con los autos en tiempo real, los intervalos, el aviso cuando
+          alguien se pone a menos de 0,3 s del de adelante y el relato en audio.</p>`}
       ${ultima ? `<p><a class="chip jugable" href="#/ver/${ultima.s.key}">
-        ▶ mientras tanto, mirá ${esc(ultima.g.nombre)} — ${esc(ultima.s.nombre)}</a></p>` : ""}
-    </div>`;
+        ▶ mientras tanto, repasá ${esc(ultima.g.nombre)} — ${esc(ultima.s.nombre)}</a></p>` : ""}
+    </div></div>`;
 
-  if (prox) {
-    const pintar = () => {
-      const ms = prox.t - Date.now();
-      if (ms <= 0) { rutear(); return; }
-      const s = Math.floor(ms / 1000);
-      const partes = [
-        [Math.floor(s / 86400), "días"],
-        [Math.floor((s % 86400) / 3600), "horas"],
-        [Math.floor((s % 3600) / 60), "min"],
-        [s % 60, "seg"],
-      ];
-      const el = $("#cuenta");
-      if (el) el.innerHTML = partes.map(([v, n]) =>
-        `<div><b>${String(v).padStart(2, "0")}</b><span>${n}</span></div>`).join("");
-    };
-    pintar();
-    clearInterval(app.timerCuenta);
-    app.timerCuenta = setInterval(pintar, 1000);
-  }
+  clearInterval(app.timerCuenta);
+  const blanco = arrancando ? Date.parse(si.inicioUTC) : (prox && prox.t);
+  if (!blanco) return;
+
+  // En la previa se pregunta seguido: es justo el momento en que a nadie le
+  // gusta estar refrescando a mano.
+  let ultimoSondeo = 0;
+  const pintar = async () => {
+    const ms = blanco - Date.now();
+    const g = Math.max(0, Math.floor(ms / 1000));
+    const partes = [
+      [Math.floor(g / 86400), "días"],
+      [Math.floor((g % 86400) / 3600), "horas"],
+      [Math.floor((g % 3600) / 60), "min"],
+      [g % 60, "seg"],
+    ];
+    const el = $("#cuenta");
+    if (el) el.innerHTML = partes.map(([v, n]) =>
+      `<div><b>${String(v).padStart(2, "0")}</b><span>${n}</span></div>`).join("");
+
+    const cada = arrancando ? 8000 : 60000;
+    if (Date.now() - ultimoSondeo > cada) {
+      ultimoSondeo = Date.now();
+      app.live = await consultarVivo();
+      pintarBotonNav();
+      if (location.hash !== "#/vivo") return;
+      // Que abra el stream, o que se entre en la ventana de previa, cambian la
+      // pantalla entera: se repinta.
+      if (hayVivo(app.live) || porSalir(app.live) !== arrancando) rutear();
+    }
+  };
+  pintar();
+  app.timerCuenta = setInterval(pintar, 1000);
+}
+
+/* La grilla, en zigzag como la de verdad. */
+function gridHTML() {
+  const g = grillaDePartida();
+  if (!g) return "";
+  const cajas = g.filas.map((r) => {
+    const p = piloto(r.n);
+    return `<div class="gr-caja" style="border-color:#${p.color}">
+      <span class="gr-pos">${r.pos}</span>
+      <span class="gr-nom">
+        <b>${esc(p.code)}</b>
+        <span class="gr-largo">${esc(p.name)}</span>
+      </span>
+      <span class="gr-eq">${esc(p.team)}</span>
+    </div>`;
+  }).join("");
+  return `<div class="grilla">
+    <h2>Así larga</h2>
+    <p class="que">Según la clasificación. No incluye penalizaciones de grilla
+      aplicadas después.</p>
+    <div class="gr-filas">${cajas}</div>
+  </div>`;
+}
+
+/* En el celular no entran las dos cosas: el circuito queda del tamaño de una
+   estampilla y la tabla es puro scroll. Se muestra una a la vez y este control
+   elige cuál. En pantalla grande no aparece y se ven las dos, como siempre. */
+function panelesMoviles() {
+  const cont = $(".paneles");
+  const visor = $(".visor");
+  if (!cont || !visor) return;
+  const elegir = (cual) => {
+    visor.classList.toggle("solo-pista", cual === "pista");
+    visor.classList.toggle("solo-tabla", cual === "tabla");
+    cont.querySelectorAll("button").forEach((b) =>
+      b.classList.toggle("activo", b.dataset.panel === cual));
+    try { localStorage.setItem("foruno.panel", cual); } catch { /* modo privado */ }
+    // El canvas mide su contenedor: si estaba oculto midió cero.
+    window.dispatchEvent(new Event("resize"));
+  };
+  cont.querySelectorAll("button").forEach((b) => {
+    b.onclick = () => elegir(b.dataset.panel);
+  });
+  let guardado = "pista";
+  try { guardado = localStorage.getItem("foruno.panel") || "pista"; } catch { /* idem */ }
+  elegir(guardado);
 }
 
 /* ------------------------------------------------------------ visor */
@@ -452,6 +636,7 @@ async function vistaVisor(key) {
   salto.onchange = () => { location.hash = "#/ver/" + salto.value; };
 
   Visor.montar($("#vista"), replay);
+  panelesMoviles();
   overlay(null);
 }
 
@@ -471,6 +656,7 @@ async function rutear() {
   if (app.visorActivo) { Visor.destruir(); app.visorActivo = false; }
   if (app.vivoActivo) { Vivo.destruir(); app.vivoActivo = false; }
   clearInterval(app.timerCuenta);
+  clearInterval(app.timerBanner);
   const h = location.hash || "#/calendario";
   for (const [re, fn] of RUTAS) {
     const m = h.match(re);
@@ -518,20 +704,27 @@ async function rutear() {
     return;
   }
 
+  // Se consulta antes de pintar nada: el botón grande de la portada necesita
+  // saber si hay sesión al aire para encender ya en el primer cuadro.
+  app.live = await consultarVivo();
+
   overlay(null);
   window.addEventListener("hashchange", rutear);
   rutear();
+  pintarBotonNav();
 
   // El botón VIVO se enciende solo cuando la F1 abre la transmisión, sin que
   // haya que recargar. Cada 60 s alcanza: una sesión no empieza de un segundo
   // al otro sin avisar.
-  app.live = await consultarVivo();
-  pintarBotonNav();
   setInterval(async () => {
     const antes = hayVivo(app.live);
     app.live = await consultarVivo();
     pintarBotonNav();
-    if (!antes && hayVivo(app.live) && location.hash === "#/vivo") rutear();
+    // Si la sesión abrió mientras se miraba otra cosa, se repinta para que el
+    // botón grande aparezca encendido sin recargar.
+    const enPortada = ["", "#", "#/", "#/calendario", "#/vivo"]
+      .includes(location.hash || "");
+    if (antes !== hayVivo(app.live) && enPortada) rutear();
   }, 60000);
   setInterval(pintarBotonNav, 30000);
 })();

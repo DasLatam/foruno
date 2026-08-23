@@ -47,12 +47,16 @@
   <div class="visor-cab">
     <a class="volver" href="#/calendario" title="Volver al calendario">←</a>
     <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
+    <div class="paneles" role="group" aria-label="Qué mostrar">
+      <button data-panel="pista" class="activo">Circuito</button>
+      <button data-panel="tabla">Tabla</button>
+    </div>
     <select class="vc-salto" title="Saltar a otra sesión"></select>
   </div>
   <section class="visor">
     <aside class="tabla">
       <div class="tabla-cab">
-        <span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span>
+        <span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span>
       </div>
       <ol class="filas"></ol>
       <div class="leyenda">
@@ -87,14 +91,21 @@
     <span class="chapa-vivo"><span class="punto-vivo"></span>EN VIVO</span>
     <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
     <span class="estado-vivo"></span>
+    <div class="paneles" role="group" aria-label="Qué mostrar">
+      <button data-panel="pista" class="activo">Circuito</button>
+      <button data-panel="tabla">Tabla</button>
+    </div>
     <button class="btn-relato" title="Relato de radio con la voz del navegador">🔊 Relato</button>
   </div>
   <section class="visor">
-    <aside class="tabla">
-      <div class="tabla-cab"><span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span></div>
+    <aside class="tabla tabla-vivo">
+      <div class="tabla-cab"><span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span></div>
       <ol class="filas"></ol>
       <div class="leyenda">
         <span class="lg"><i class="sw rojo"></i>a menos de 0,3 s: sobrepaso a la vista</span>
+        <span class="lg"><i class="sw violeta"></i>mejor de la sesión</span>
+        <span class="lg"><i class="sw verde"></i>mejoró su marca</span>
+        <span class="lg"><i class="sw amarillo"></i>sin mejorar</span>
         <span class="error-vivo"></span>
       </div>
     </aside>

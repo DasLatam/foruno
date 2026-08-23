@@ -34,6 +34,14 @@ const Vivo = (() => {
     return Number.isFinite(n) ? n : null;
   }
 
+  // Los tiempos de vuelta vienen como "1:12.345" o "12.345".
+  function mm(v) {
+    if (typeof v !== "string" || !v) return null;
+    const p = v.split(":");
+    const n = p.length === 2 ? Number(p[0]) * 60 + parseFloat(p[1]) : parseFloat(p[0]);
+    return Number.isFinite(n) ? n : null;
+  }
+
   const ficha = (num) => (app.indice?.pilotos?.[String(num)]) ||
     { code: String(num), name: "Piloto " + num, team: "", color: "888888" };
 
@@ -59,6 +67,13 @@ const Vivo = (() => {
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
     if (d.error) throw new Error(d.error);
+    // La sesión está anunciada pero la F1 no abrió el stream todavía. Se marca
+    // aparte para que arriba muestre la cuenta regresiva y no un error.
+    if (d.aunNo) {
+      const e = new Error("la transmisión todavía no abrió");
+      e.aunNo = true;
+      throw e;
+    }
     return d;
   }
 
@@ -111,6 +126,13 @@ const Vivo = (() => {
     return ev;
   }
 
+  /* El estado que manda la F1, en castellano. Sin estado (o "Inactive") no
+     quiere decir que no pase nada: es la previa, con los autos ya en pista. */
+  const ROTULOS = { started: "en carrera", aborted: "bandera roja",
+                    finished: "bandera a cuadros", inactive: "previa",
+                    ends: "terminada", finalised: "resultado oficial" };
+  const rotulo = (e) => ROTULOS[String(e || "").toLowerCase()] || "previa";
+
   /* ------------------------------------------------------------ tabla */
 
   function ordenados() {
@@ -127,6 +149,7 @@ const Vivo = (() => {
         <span class="pos"></span>
         <span class="piloto"><span class="cod"></span><span class="equipo"></span></span>
         <span class="gap"></span><span class="lider"></span>
+        <span class="ritmo"><b></b><em></em></span>
         <span class="segs"></span></li>`).join("");
     }
     filas.forEach((f, i) => {
@@ -144,6 +167,18 @@ const Vivo = (() => {
       li.classList.toggle("en-boxes", !!f.boxes);
       // Lo que pidió el usuario: marcar quién se lo está por comer.
       li.classList.toggle("a-tiro", iv != null && iv > 0 && iv <= CERCA && !f.boxes);
+
+      // Cómo viene girando: la última vuelta cerrada, calificada por la propia
+      // F1 con el mismo criterio que los microsectores, y cuánto le sacó o le
+      // puso a su propia mejor vuelta.
+      const r = li.querySelector(".ritmo");
+      const t = r.querySelector("b"), delta = r.querySelector("em");
+      t.textContent = f.ultimaVuelta || "—";
+      r.className = "ritmo " + (f.ultMejorTotal ? "mejor-sesion"
+        : f.ultMejorPropia ? "mejoro" : f.ultimaVuelta ? "sin-mejorar" : "");
+      const ult = mm(f.ultimaVuelta), mejor = mm(f.mejorVuelta);
+      delta.textContent = (ult != null && mejor != null && ult > mejor)
+        ? "+" + (ult - mejor).toFixed(3) : "";
 
       const segs = li.querySelector(".segs");
       const todos = f.sectores.flatMap((s) => s.segs);
@@ -177,7 +212,9 @@ const Vivo = (() => {
       if (x < x0) x0 = x; if (x > x1) x1 = x;
       if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    const pad = 60;
+    // Proporcional, no fijo: 60 px de margen a cada lado se comen un tercio de
+    // la pantalla de un celular y dejan el circuito del tamaño de un sello.
+    const pad = Math.max(14, Math.min(60, Math.min(r.width, r.height) * 0.07));
     const esc = Math.min((r.width - 2 * pad) / (x1 - x0), (r.height - 2 * pad) / (y1 - y0));
     S.vista = {
       px: (x) => (x - x0) * esc + (r.width - (x1 - x0) * esc) / 2,
@@ -283,13 +320,14 @@ const Vivo = (() => {
       pintarTabla();
       avisar(ev);
       if (S.relator) S.relator.procesar(ev, S.pilotos);
-      raiz.querySelector(".estado-vivo").textContent = d.estadoSesion || "en vivo";
+      raiz.querySelector(".estado-vivo").textContent = rotulo(d.estadoSesion);
       const err = raiz.querySelector(".error-vivo");
       if (err) err.textContent = "";
     } catch (e) {
       const err = raiz.querySelector(".error-vivo");
       // Un poll que falla no corta el vivo: se reintenta en el siguiente.
-      if (err) err.textContent = "reintentando… (" + e.message + ")";
+      if (err) err.textContent = e.aunNo ? "esperando la señal de la F1…"
+                                         : "reintentando… (" + e.message + ")";
     }
   }
 

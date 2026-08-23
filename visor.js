@@ -93,6 +93,33 @@ const Visor = (() => {
     return mejor;
   }
 
+  /* La última vuelta que el piloto ya cerró, para leer cómo viene girando.
+     No sirve la vuelta en curso: todavía no tiene tiempo. */
+  function ultimaCerrada(num, t) {
+    const ls = R.laps[num];
+    if (!ls) return null;
+    let u = null;
+    for (const l of ls) {
+      if (l.t == null || !l.d || l.t + l.d > t) continue;
+      if (!u || l.t > u.t) u = l;
+    }
+    return u;
+  }
+
+  /* Mejor vuelta de toda la sesión hasta ese instante, que es lo que decide el
+     violeta. Se cachea por segundo porque recorre a los 20 pilotos enteros. */
+  function mejorSesion(t) {
+    const k = Math.floor(t);
+    if (S.cacheMejorSesion && S.cacheMejorSesion.k === k) return S.cacheMejorSesion.v;
+    let mejor = null;
+    for (const num of Object.keys(R.laps)) {
+      const m = mejorVuelta(Number(num), t);
+      if (m != null && (mejor == null || m < mejor)) mejor = m;
+    }
+    S.cacheMejorSesion = { k, v: mejor };
+    return mejor;
+  }
+
   function neumaticoEn(num, t) {
     const v = vueltaEn(num, t);
     if (!v) return "UNKNOWN";
@@ -144,6 +171,7 @@ const Visor = (() => {
         enPista: posicionEn(num, t) !== null,
         vuelta: vueltaEn(num, t), mejor: mejorVuelta(num, t),
         neu: neumaticoEn(num, t), seg: microsectores(num, t),
+        ultima: ultimaCerrada(num, t),
       });
     }
 
@@ -189,6 +217,7 @@ const Visor = (() => {
         </span>
         <span class="gap"></span>
         <span class="lider"></span>
+        <span class="ritmo"><b></b><em></em></span>
         <span class="segs"></span>`;
       li.style.borderLeftColor = "#" + d.color;
       li.querySelector(".cod").textContent = d.code;
@@ -205,6 +234,26 @@ const Visor = (() => {
     if (typeof v === "string") return v;     // "+1 LAP"
     return "+" + v.toFixed(3);
   };
+
+  /* Cómo viene girando, con el mismo código de color de los microsectores pero
+     sobre la vuelta entera. Existe además porque hay sesiones cuyos datos no
+     traen microsectores: esto se puede calcular siempre, de los tiempos. */
+  function pintarRitmo(cont, f, mejorDeTodos) {
+    const u = f.ultima;
+    const t = cont.querySelector("b"), delta = cont.querySelector("em");
+    if (!u || !u.d) {
+      t.textContent = "—"; delta.textContent = ""; cont.className = "ritmo";
+      return;
+    }
+    t.textContent = fmtVuelta(u.d);
+    const esMejorPropia = f.mejor != null && Math.abs(u.d - f.mejor) < 1e-6;
+    const esMejorTotal = esMejorPropia && mejorDeTodos != null &&
+                         Math.abs(u.d - mejorDeTodos) < 1e-6;
+    cont.className = "ritmo " + (esMejorTotal ? "mejor-sesion"
+      : esMejorPropia ? "mejoro" : "sin-mejorar");
+    delta.textContent = (f.mejor != null && u.d > f.mejor)
+      ? "+" + (u.d - f.mejor).toFixed(3) : "";
+  }
 
   function pintarSegs(cont, seg) {
     if (!seg) { cont.innerHTML = ""; cont.dataset.n = "0"; return; }
@@ -244,6 +293,7 @@ const Visor = (() => {
       const cn = "neu " + f.neu;
       if (neu.className !== cn) { neu.className = cn; neu.textContent = (f.neu || "U")[0]; }
       li.classList.toggle("fuera", !f.enPista);
+      pintarRitmo(li.querySelector(".ritmo"), f, mejorSesion(S.t));
       pintarSegs(li.querySelector(".segs"), f.seg);
     });
     return filas;
@@ -267,7 +317,9 @@ const Visor = (() => {
       if (x < x0) x0 = x; if (x > x1) x1 = x;
       if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    const pad = 64;
+    // Proporcional, no fijo: 60 px de margen a cada lado se comen un tercio de
+    // la pantalla de un celular y dejan el circuito del tamaño de un sello.
+    const pad = Math.max(14, Math.min(60, Math.min(r.width, r.height) * 0.07));
     const esc = Math.min((r.width - 2 * pad) / (x1 - x0), (r.height - 2 * pad) / (y1 - y0));
     S.vista = {
       // El eje Y de la telemetría crece hacia el norte y el del canvas hacia
@@ -438,9 +490,27 @@ const Visor = (() => {
         S.velocidad = Number(b.dataset.vel);
       };
     });
+    // No todas las sesiones traen microsectores. Cuando faltan, el botón no
+    // hacía nada y parecía roto: ahora lo dice. La columna "Última" sigue
+    // andando igual, porque sale de los tiempos de vuelta.
+    const haySegs = Object.values(R.laps).some((ls) =>
+      ls.some((l) => l.s && l.s.length));
     const tg = raiz.querySelector(".toggle-seg");
-    tg.classList.toggle("activa", S.verSegs);
-    tg.onclick = () => { S.verSegs = !S.verSegs; tg.classList.toggle("activa", S.verSegs); pintar(); };
+    if (!haySegs) {
+      S.verSegs = false;
+      tg.disabled = true;
+      tg.classList.add("sin-datos");
+      tg.textContent = "sin microsectores";
+      tg.title = "Los datos de esta sesión no traen microsectores. " +
+                 "Mirá la columna «Última» para ver cómo viene girando cada uno.";
+    } else {
+      tg.classList.toggle("activa", S.verSegs);
+      tg.onclick = () => {
+        S.verSegs = !S.verSegs;
+        tg.classList.toggle("activa", S.verSegs);
+        pintar();
+      };
+    }
 
     S.onResize = () => { redimensionar(); pintar(); };
     window.addEventListener("resize", S.onResize);
