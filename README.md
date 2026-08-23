@@ -65,10 +65,12 @@ data/
   salida de boxes el 60% de las veces, contra un 26% de base.
 - **Los autos sin señal desaparecen en vez de interpolarse.** Sin eso, un auto
   que entra a boxes dibuja una recta que cruza el circuito de punta a punta.
-- **Algunas fechas no tienen resultado oficial en OpenF1.** Donde falta, los
-  puestos y los puntos se derivan del replay y el sitio lo aclara: un campeonato
-  con dos carreras en cero sería peor, pero hacerlo pasar por dato oficial
-  también.
+- **Algunas fechas no existen del todo en OpenF1.** En 2026, Bahrein y Jeddah
+  devuelven 404 en *todos* los endpoints: no hay resultados, ni posiciones, ni
+  vueltas, ni telemetría. No se pueden estimar, así que el campeonato no las
+  incluye y el sitio lo dice arriba de la tabla en vez de mostrar números que no
+  cierran con los oficiales. El generador igual sabe derivar los puntos del
+  replay cuando falta sólo el resultado; ahí falta todo.
 
 ## Licencia y aclaraciones
 
