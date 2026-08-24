@@ -13,6 +13,59 @@
 
 const $ = (s, r = document) => r.querySelector(s);
 
+/* Navegación por URLs reales.
+ *
+ * El sitio nació enrutando por `#hash`, que es lo más simple cuando no hay
+ * servidor. El problema aparece cuando se lo quiere encontrar: **el buscador no
+ * indexa fragmentos**, así que las 25 fechas, las 76 sesiones y los dos
+ * campeonatos vivían todos detrás de `foruno.vercel.app/`, una sola URL.
+ *
+ * Ahora cada vista tiene su ruta de verdad (`/gp/paises-bajos-2026`), que existe
+ * como archivo estático generado por `paginas.py` con el contenido ya escrito.
+ * El JavaScript lo reemplaza al cargar por la versión interactiva.
+ *
+ * Los `#hash` viejos siguen funcionando —hay links compartidos por ahí— pero se
+ * reescriben a la ruta canónica apenas cargan, para que no queden dos URLs
+ * distintas del mismo contenido.
+ */
+function rutaActual() {
+  const h = decodeURIComponent(location.hash.replace(/^#/, ""));
+  if (h && h !== "/") return h.startsWith("/") ? h : "/" + h;
+  return decodeURIComponent(location.pathname) || "/";
+}
+
+/* Corrige la barra de direcciones a la URL canónica sin recargar ni agregar una
+   entrada al historial. Se usa cuando se llegó por una ruta vieja —el
+   `#/ver/11353` de un link compartido, o `/gp/1292`— para que quede a la vista
+   la que el buscador conoce y la que uno querría volver a compartir. */
+function canonizar(ruta) {
+  if (location.pathname !== ruta) history.replaceState({}, "", ruta);
+}
+
+/* Ir a una ruta desde adentro del sitio. */
+function ir(ruta, reemplazar) {
+  if (rutaActual() === ruta && !location.hash) return;
+  history[reemplazar ? "replaceState" : "pushState"]({}, "", ruta);
+  rutear();
+}
+
+/* Un solo escuchador para todos los links internos, en vez de un `onclick` por
+   botón: los que se generan después (las tarjetas del calendario, la tabla de
+   un GP) quedan cubiertos sin acordarse de engancharlos. Se respetan las
+   convenciones del navegador — ctrl/cmd, botón del medio, target — porque abrir
+   en otra pestaña tiene que seguir funcionando: del otro lado hay una página
+   real. */
+function enlacesInternos(ev) {
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey
+      || ev.shiftKey || ev.altKey) return;
+  const a = ev.target.closest("a[href]");
+  if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+  const href = a.getAttribute("href");
+  if (!href || !href.startsWith("/") || href.startsWith("//")) return;
+  ev.preventDefault();
+  ir(href);
+}
+
 const app = {
   indice: null,
   temporada: null,
@@ -105,7 +158,7 @@ function bannerVivo() {
   const si = app.live?.sesion;
   if (hayVivo(app.live)) {
     const previa = faseDe(app.live) === "previa";
-    return `<a class="banner-vivo al-aire" href="#/vivo">
+    return `<a class="banner-vivo al-aire" href="/vivo">
       <span class="boton-vivo grande"><span class="punto-vivo"></span> VIVO</span>
       <span class="bv-txt"><b>${esc(si.gp)} — ${esc(si.nombre)}</b>
         <em>${esc(si.circuito)} · ${previa
@@ -114,7 +167,7 @@ function bannerVivo() {
     </a>`;
   }
   if (enPista(app.live)) {
-    return `<a class="banner-vivo corriendo" href="#/vivo">
+    return `<a class="banner-vivo corriendo" href="/vivo">
       <span class="boton-vivo grande" data-apagado><span class="punto-vivo"></span> VIVO</span>
       <span class="bv-txt"><b>${esc(si.gp)} — ${esc(si.nombre)} está corriendo</b>
         <em>la F1 libera la telemetría al terminar; se enciende solo</em></span>
@@ -122,7 +175,7 @@ function bannerVivo() {
   }
   const prox = proximaSesion();
   if (!prox) return "";
-  return `<a class="banner-vivo" href="#/vivo">
+  return `<a class="banner-vivo" href="/vivo">
     <span class="boton-vivo grande" data-apagado><span class="punto-vivo"></span> VIVO</span>
     <span class="bv-txt"><b>${prox.gp.bandera} ${esc(prox.gp.nombre)} — ${esc(prox.s.nombre)}</b>
       <em>empieza en <span id="bvCuenta">${cuentaLarga(prox.t - Date.now())}</span></em></span>
@@ -149,12 +202,6 @@ function vistaCalendario() {
       <div class="gps">${gps.map(tarjetaGP).join("")}</div>
     </div></div>`;
   $("#vista").innerHTML = html;
-  $("#vista").querySelectorAll("[data-ver]").forEach((b) => {
-    b.onclick = () => { location.hash = "#/ver/" + b.dataset.ver; };
-  });
-  $("#vista").querySelectorAll("[data-gp]").forEach((b) => {
-    b.onclick = () => { location.hash = "#/gp/" + b.dataset.gp; };
-  });
 
   const prox = proximaSesion();
   clearInterval(app.timerBanner);
@@ -167,16 +214,27 @@ function vistaCalendario() {
   }
 }
 
+/* Las rutas canónicas de cada cosa, en un solo lugar: si mañana cambia el
+   esquema de URLs, cambia acá y no en quince plantillas. */
+const rutaGP = (gp) => "/gp/" + esc(gp.slug || gp.meeting_key);
+const rutaSesion = (s) => "/ver/" + esc(s.slug || s.key);
+const rutaPiloto = (p) => "/piloto/" + esc(p.slug || p.code || p.n);
+/* Los nombres vienen de OpenF1 en inglés; el índice trae la versión en
+   castellano al lado. Se prefiere ésa, con el original como red. */
+const nombreSesion = (s) => s.nombre_es || s.nombre;
+
 function tarjetaGP(gp) {
   const corridas = gp.sesiones.filter((s) => s.corrida);
   const futuro = corridas.length === 0;
-  const carrera = [...gp.sesiones].reverse().find((s) => s.tipo === "Race" && s.resultado.length);
+  // Ojo: OpenF1 le pone `session_type: "Race"` también al sprint. Lo que
+  // distingue a la carrera es el nombre.
+  const carrera = gp.sesiones.find((s) => s.nombre === "Race" && s.resultado.length);
   const podio = carrera ? carrera.resultado.slice(0, 3) : [];
 
   return `<article class="gp ${futuro ? "futuro" : ""}">
     <div class="gp-cab">
       <span class="gp-bandera">${gp.bandera}</span>
-      <span class="gp-nombre">${esc(gp.nombre)}</span>
+      <span class="gp-nombre">${esc(gp.nombre_es || gp.nombre)}</span>
       <span class="gp-fecha">${fecha(gp.date_start)}</span>
     </div>
     <div class="gp-circ">${esc(gp.circuito)}</div>
@@ -189,8 +247,8 @@ function tarjetaGP(gp) {
     : `<div class="gp-circ">${futuro ? "todavía no se corrió" : "sin resultados"}</div>`}
     <div class="gp-ses">
       ${gp.sesiones.filter((s) => s.corrida).map((s) => s.replay
-        ? `<button class="chip jugable" data-ver="${s.key}">▶ ${esc(s.nombre)}</button>`
-        : `<button class="chip res" data-gp="${gp.meeting_key}">${esc(s.nombre)}</button>`
+        ? `<a class="chip jugable" href="${rutaSesion(s)}">▶ ${esc(nombreSesion(s))}</a>`
+        : `<a class="chip res" href="${rutaGP(gp)}">${esc(nombreSesion(s))}</a>`
       ).join("")}
     </div>
   </article>`;
@@ -199,20 +257,18 @@ function tarjetaGP(gp) {
 function vistaGP(mk) {
   const gp = app.indice.gps.find((g) => String(g.meeting_key) === String(mk));
   if (!gp) return vistaCalendario();
+  canonizar(rutaGP(gp));
   const corridas = gp.sesiones.filter((s) => s.corrida && s.resultado.length);
 
   $("#vista").innerHTML = `
     <div class="scroll"><div class="ancho">
-      <h1>${gp.bandera} ${esc(gp.nombre)}</h1>
+      <h1>${gp.bandera} ${esc(gp.nombre_es || gp.nombre)} ${app.temporada}</h1>
       <p class="sub">${esc(gp.oficial || "")} · ${esc(gp.circuito)} ·
         ${fecha(gp.date_start, { day: "2-digit", month: "long", year: "numeric" })}</p>
       ${corridas.length ? corridas.map(tablaSesion).join("") :
         `<p class="vacio">Todavía no hay resultados de esta fecha.</p>`}
-      <p style="margin-top:26px"><a href="#/calendario" class="chip res">← volver al calendario</a></p>
+      <p style="margin-top:26px"><a href="/" class="chip res">← volver al calendario</a></p>
     </div></div>`;
-  $("#vista").querySelectorAll("[data-ver]").forEach((b) => {
-    b.onclick = () => { location.hash = "#/ver/" + b.dataset.ver; };
-  });
 }
 
 function tablaSesion(s) {
@@ -220,8 +276,8 @@ function tablaSesion(s) {
   const estimado = s.resultado.some((r) => r.estimado);
   return `
   <h2 style="font-size:16px;margin:24px 0 8px;display:flex;align-items:center;gap:10px">
-    ${esc(s.nombre)}
-    ${s.replay ? `<button class="chip jugable" data-ver="${s.key}">▶ ver</button>` : ""}
+    ${esc(nombreSesion(s))}
+    ${s.replay ? `<a class="chip jugable" href="${rutaSesion(s)}">▶ ver</a>` : ""}
     ${estimado ? '<span class="chip" title="OpenF1 no publica el resultado oficial de esta sesión: se derivó del replay">estimado</span>' : ""}
   </h2>
   <table><thead><tr>
@@ -261,8 +317,9 @@ function vistaPilotos() {
       </tr></thead><tbody>
       ${t.map((f) => `<tr class="equipo-barra" style="border-left-color:#${f.color}">
         <td class="num medalla-${f.pos}">${f.pos}</td>
-        <td><span class="cod">${esc(f.code)}</span>
-            <span class="tenue"> ${esc(f.name)}</span></td>
+        <td><a href="${rutaPiloto(app.indice.pilotos[f.n] || f)}">
+            <span class="cod">${esc(f.code)}</span>
+            <span class="tenue"> ${esc(f.name)}</span></a></td>
         <td class="tenue">${esc(f.team)}</td>
         <td class="num">${f.wins || ""}</td>
         <td class="num pts">${f.pts}</td>
@@ -293,6 +350,75 @@ function vistaEquipos() {
       </tr>`).join("")}
       </tbody></table>` : `<p class="vacio">Todavía no hay puntos cargados.</p>`}
       ${notaEstimadas()}
+    </div></div>`;
+}
+
+/* La ficha de un piloto. Existe sobre todo porque es lo que la gente busca por
+   nombre —"norris puntos 2026"— y hasta ahora el sitio no tenía nada que
+   ofrecerle a esa búsqueda. */
+function vistaPiloto(slug) {
+  const p = Object.values(app.indice.pilotos).find(
+    (x) => x.slug === slug || String(x.code).toLowerCase() === String(slug).toLowerCase());
+  if (!p) return vistaCalendario();
+  const fila = app.indice.campeonato.pilotos.find((f) => f.n === p.n);
+  const filas = [];
+  for (const gp of app.indice.gps) {
+    for (const s of gp.sesiones) {
+      if (s.nombre !== "Race" && s.nombre !== "Sprint") continue;
+      const r = (s.resultado || []).find((x) => x.n === p.n);
+      if (!r) continue;
+      const estado = r.dsq ? "DSQ" : r.dns ? "DNS" : r.dnf ? "DNF" : (r.pos ?? "–");
+      filas.push(`<tr class="equipo-barra" style="border-left-color:#${p.color}">
+        <td>${gp.bandera} <a href="${rutaGP(gp)}">${esc(gp.nombre_es || gp.nombre)}</a></td>
+        <td class="tenue">${esc(nombreSesion(s))}</td>
+        <td class="num">${esc(String(estado))}</td>
+        <td class="num pts">${r.pts || ""}</td>
+        <td>${s.replay ? `<a class="chip jugable" href="${rutaSesion(s)}">▶</a>` : ""}</td>
+      </tr>`);
+    }
+  }
+  $("#vista").innerHTML = `
+    <div class="scroll"><div class="ancho">
+      <h1><span class="cod" style="color:#${p.color}">${esc(p.code)}</span>
+          ${esc(p.name)}</h1>
+      <p class="sub">#${p.n} · ${esc(p.team)}${fila
+        ? ` · ${fila.pos}.º del campeonato ${app.temporada} con ${fila.pts} puntos`
+          + (fila.wins ? ` y ${fila.wins} victoria${fila.wins > 1 ? "s" : ""}` : "")
+        : ""}</p>
+      ${filas.length ? `<table><thead><tr>
+        <th>Fecha</th><th>Sesión</th><th class="num">Puesto</th>
+        <th class="num">Pts</th><th></th>
+      </tr></thead><tbody>${filas.join("")}</tbody></table>`
+        : `<p class="vacio">Todavía sin resultados en la temporada.</p>`}
+      <p style="margin-top:26px"><a href="/pilotos" class="chip res">←
+        campeonato de pilotos</a></p>
+    </div></div>`;
+}
+
+/* De dónde sale cada dato. Se arma con el mismo catálogo que alimenta el panel
+   ⚙ del visor, así no hay una segunda lista que mantener. */
+function vistaDatos() {
+  const fuentes = app.catalogo?.fuentes || [];
+  $("#vista").innerHTML = `
+    <div class="scroll"><div class="ancho">
+      <h1>De dónde salen los datos</h1>
+      <p class="sub">Todo lo que ForUno muestra sale de
+        <a href="https://openf1.org" target="_blank" rel="noopener">OpenF1</a>,
+        un proyecto comunitario que publica la telemetría oficial de la Fórmula 1.
+        Éstas son las fuentes que el visor sabe pedir de cada sesión; el panel ⚙
+        de cada replay dice cuáles trajo esa fecha en particular.</p>
+      ${fuentes.length ? `<table><thead><tr>
+        <th>Fuente</th><th>Qué da</th><th>Endpoint</th>
+      </tr></thead><tbody>
+      ${fuentes.map((f) => `<tr>
+        <td>${esc(f.titulo)}</td>
+        <td class="tenue">${esc(f.que)}</td>
+        <td class="tenue"><code>${esc(f.endpoint)}</code></td>
+      </tr>`).join("")}</tbody></table>`
+        : `<p class="vacio">No pude cargar el catálogo de datos.</p>`}
+      <p class="sub" style="margin-top:20px">Datos bajo CC BY-NC-SA 4.0. ForUno es
+        un proyecto personal, sin relación con Formula One Management ni con la
+        FIA.</p>
     </div></div>`;
 }
 
@@ -543,7 +669,7 @@ function portadaEspera() {
         <p class="que">Cuando la sesión arranque, este botón se enciende solo: el
           circuito con los autos en tiempo real, los intervalos, el aviso cuando
           alguien se pone a menos de 0,3 s del de adelante y el relato en audio.</p>`}
-      ${ultima ? `<p><a class="chip jugable" href="#/ver/${ultima.s.key}">
+      ${ultima ? `<p><a class="chip jugable" href="/ver/${esc(ultima.s.slug || ultima.s.key)}">
         ▶ mientras tanto, repasá ${esc(ultima.g.nombre)} — ${esc(ultima.s.nombre)}</a></p>` : ""}
     </div></div>`;
 
@@ -554,7 +680,7 @@ function portadaEspera() {
     app.timerCuenta = setInterval(async () => {
       app.live = await consultarVivo();
       pintarBotonNav();
-      if (location.hash !== "#/vivo") return;
+      if (rutaActual() !== "/vivo") return;
       if (hayVivo(app.live) || !enPista(app.live)) rutear();
     }, 15000);
     return;
@@ -583,7 +709,7 @@ function portadaEspera() {
       ultimoSondeo = Date.now();
       app.live = await consultarVivo();
       pintarBotonNav();
-      if (location.hash !== "#/vivo") return;
+      if (rutaActual() !== "/vivo") return;
       // Que abra el stream, o que se entre en la ventana de previa, cambian la
       // pantalla entera: se repinta.
       if (hayVivo(app.live) || porSalir(app.live) !== arrancando) rutear();
@@ -672,6 +798,7 @@ async function vistaVisor(key) {
   const ref = buscarSesion(key);
   if (!ref) return vistaCalendario();
   const { gp, s } = ref;
+  canonizar(rutaSesion(s));
 
   overlay("Cargando", `${gp.nombre} — ${s.nombre}`, 30);
 
@@ -695,7 +822,7 @@ async function vistaVisor(key) {
       <p class="sub">Esta sesión todavía no tiene replay publicado. El sitio publica
         las carreras y los sprints; las prácticas y clasificaciones se muestran por
         sus resultados.</p>
-      <p><a href="#/gp/${gp.meeting_key}" class="chip res">ver los resultados de la fecha</a></p>
+      <p><a href="/gp/${esc(gp.slug || gp.meeting_key)}" class="chip res">ver los resultados de la fecha</a></p>
     </div></div>`;
     return;
   }
@@ -721,7 +848,7 @@ async function vistaVisor(key) {
   }
   salto.innerHTML = opciones.map((o) =>
     `<option value="${o.key}"${String(o.key) === String(key) ? " selected" : ""}>${esc(o.txt)}</option>`).join("");
-  salto.onchange = () => { location.hash = "#/ver/" + salto.value; };
+  salto.onchange = () => ir("/ver/" + salto.value);
 
   Visor.montar($("#vista"), replay);
   panelesMoviles();
@@ -879,15 +1006,40 @@ async function pedirTelemetria(key) {
 
 /* ------------------------------------------------------------ router */
 
+/* Las rutas numéricas (`/gp/1292`) son las viejas: se dejan porque hay links
+   así dados, pero la canónica es siempre la del slug. */
 const RUTAS = [
-  [/^#?\/?$/,                 () => vistaCalendario()],
-  [/^#\/calendario$/,         () => vistaCalendario()],
-  [/^#\/vivo$/,               () => vistaVivo()],
-  [/^#\/pilotos$/,            () => vistaPilotos()],
-  [/^#\/equipos$/,            () => vistaEquipos()],
-  [/^#\/gp\/(\d+)$/,          (m) => vistaGP(m[1])],
-  [/^#\/ver\/(\d+)$/,         (m) => vistaVisor(m[1])],
+  [/^\/?$/,                       () => vistaCalendario()],
+  [/^\/calendario\/?$/,           () => vistaCalendario()],
+  [/^\/temporada\/(\d{4})\/?$/,    (m) => irATemporada(Number(m[1]))],
+  [/^\/vivo\/?$/,                 () => vistaVivo()],
+  [/^\/pilotos\/?$/,              () => vistaPilotos()],
+  [/^\/equipos\/?$/,              () => vistaEquipos()],
+  [/^\/datos\/?$/,                () => vistaDatos()],
+  [/^\/piloto\/([^/]+)\/?$/,      (m) => vistaPiloto(m[1])],
+  [/^\/gp\/(\d+)\/?$/,            (m) => vistaGP(m[1])],
+  [/^\/gp\/([^/]+)\/?$/,          (m) => vistaGP(porSlug("gp", m[1]))],
+  [/^\/ver\/(\d+)\/?$/,           (m) => vistaVisor(m[1])],
+  [/^\/ver\/([^/]+)\/?$/,         (m) => vistaVisor(porSlug("ses", m[1]))],
 ];
+
+/* slug -> clave numérica, mirando el índice ya cargado. */
+function porSlug(que, slug) {
+  for (const gp of app.indice.gps) {
+    if (que === "gp" && gp.slug === slug) return gp.meeting_key;
+    for (const s of gp.sesiones) if (que === "ses" && s.slug === slug) return s.key;
+  }
+  return slug;
+}
+
+async function irATemporada(year) {
+  if (app.temporadas.includes(year) && year !== app.temporada) {
+    await cargarIndice(year);
+    const sel = $("#temporada");
+    if (sel) sel.value = String(year);
+  }
+  return vistaCalendario();
+}
 
 async function rutear() {
   if (app.visorActivo) {
@@ -903,12 +1055,22 @@ async function rutear() {
   }
   clearInterval(app.timerCuenta);
   clearInterval(app.timerBanner);
-  const h = location.hash || "#/calendario";
+  const h = rutaActual();
+  // Un `#hash` viejo se convierte en su ruta canónica sin recargar: así no
+  // quedan dos URLs para el mismo contenido, que es lo que hace que el buscador
+  // reparta el crédito entre las dos o elija la que no es.
+  if (location.hash) history.replaceState({}, "", h);
   for (const [re, fn] of RUTAS) {
     const m = h.match(re);
     if (m) {
-      document.querySelectorAll("#nav a").forEach((a) =>
-        a.classList.toggle("activa", h.startsWith(a.getAttribute("href"))));
+      document.querySelectorAll("#nav a").forEach((a) => {
+        // Cada link del nav declara qué prefijos le corresponden: «Calendario»
+        // sigue encendido dentro de una fecha y de un replay, que es donde uno
+        // siente que está.
+        const prefijos = (a.dataset.rutas || a.getAttribute("href")).split(" ");
+        a.classList.toggle("activa", prefijos.some(
+          (r) => r === "/" ? h === "/" : h === r || h.startsWith(r + "/")));
+      });
       try { await fn(m); } catch (e) {
         overlay(null);
         $("#vista").innerHTML = `<div class="scroll"><div class="ancho">
@@ -917,7 +1079,7 @@ async function rutear() {
       return;
     }
   }
-  location.hash = "#/calendario";
+  ir("/", true);
 }
 
 /* ------------------------------------------------------------ arranque */
@@ -947,7 +1109,9 @@ async function rutear() {
     overlay("ForUno", "cambiando de temporada…", 40);
     await cargarIndice(Number(sel.value));
     overlay(null);
-    rutear();
+    // Cambiar de temporada cambia de URL: `/temporada/2025` es una página que
+    // existe y se puede compartir, no un estado escondido del selector.
+    ir(Number(sel.value) === app.temporadas[0] ? "/" : "/temporada/" + sel.value);
   };
 
   try {
@@ -965,6 +1129,8 @@ async function rutear() {
 
   overlay(null);
   window.addEventListener("hashchange", rutear);
+  window.addEventListener("popstate", rutear);
+  document.addEventListener("click", enlacesInternos);
   rutear();
   pintarBotonNav();
 
@@ -977,8 +1143,7 @@ async function rutear() {
     pintarBotonNav();
     // Si la sesión abrió mientras se miraba otra cosa, se repinta para que el
     // botón grande aparezca encendido sin recargar.
-    const enPortada = ["", "#", "#/", "#/calendario", "#/vivo"]
-      .includes(location.hash || "");
+    const enPortada = ["/", "/calendario", "/vivo"].includes(rutaActual());
     if (antes !== hayVivo(app.live) && enPortada) rutear();
   }, 60000);
   setInterval(pintarBotonNav, 30000);

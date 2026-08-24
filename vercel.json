@@ -27,11 +27,40 @@
           "value": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
         }
       ]
+    },
+    {
+      "source": "/og/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/(sitemap.xml|robots.txt|llms.txt)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=600, s-maxage=3600"
+        }
+      ]
     }
   ],
   "functions": {
     "api/live.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/ver/:key(\\d+)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/gp/:key(\\d+)",
+      "destination": "/index.html"
+    }
+  ]
 }

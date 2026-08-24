@@ -895,3 +895,38 @@ body.no-pits .modal-guion.pit{display:none}
 .tl-drs.sin{opacity:.35; text-decoration:line-through; cursor:help}
 .pista.con-tele .toggle-seg{bottom:58px}
 .pista.con-tele .telemetria{right:12px}
+
+/* ================= páginas estáticas (lo que ve el buscador) =================
+   `paginas.py` genera un HTML real por cada fecha, sesión y piloto, con la tabla
+   de resultados ya escrita. El JavaScript lo reemplaza al cargar por la versión
+   interactiva, pero mientras tanto —y para siempre, si alguien tiene JS
+   apagado— eso es lo que se ve. Así que tiene que verse bien, no sólo existir. */
+.migas{
+  font-size:11px; color:var(--tenue); margin:0 0 14px;
+  display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+}
+.migas a{color:var(--tenue); text-decoration:underline; text-underline-offset:2px}
+.migas a:hover{color:var(--texto)}
+
+.tabla-plana{overflow-x:auto; margin:10px 0 18px}
+.tabla-plana table{width:100%; border-collapse:collapse; font-size:13px; min-width:460px}
+.tabla-plana th{
+  text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.6px;
+  color:var(--tenue); font-weight:600; padding:6px 10px 6px 0;
+  border-bottom:1px solid var(--borde); white-space:nowrap;
+}
+.tabla-plana td{
+  padding:6px 10px 6px 0; border-bottom:1px solid rgba(39,48,67,.5);
+  vertical-align:top;
+}
+.tabla-plana tr:last-child td{border-bottom:none}
+.tabla-plana td:first-child{
+  font-variant-numeric:tabular-nums; color:var(--tenue); width:52px;
+}
+.tabla-plana a{text-decoration:underline; text-underline-offset:2px}
+.tabla-plana a:hover{color:var(--acento)}
+.tabla-plana code{font-size:11px; color:var(--tenue)}
+
+.ses-bloque{margin-top:26px}
+.ses-bloque h2{font-size:17px; margin:0 0 4px}
+.sub.nota{font-size:11px; opacity:.8}

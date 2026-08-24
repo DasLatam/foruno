@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>">
+<link rel="stylesheet" href="/style.css">
+<!--foruno:seo-->
+<title>Campeonato de constructores 2026 · ForUno</title>
+<meta name="description" content="Tabla del campeonato de constructores de Fórmula 1 2026: puntos de cada escudería.">
+<link rel="canonical" href="https://foruno.vercel.app/equipos">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+<meta name="author" content="ForUno">
+<meta name="language" content="es">
+<meta property="og:site_name" content="ForUno">
+<meta property="og:locale" content="es_AR">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Campeonato de constructores 2026">
+<meta property="og:description" content="Tabla del campeonato de constructores de Fórmula 1 2026: puntos de cada escudería.">
+<meta property="og:url" content="https://foruno.vercel.app/equipos">
+<meta property="og:image" content="https://foruno.vercel.app/og/foruno.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Campeonato de constructores 2026">
+<meta name="twitter:description" content="Tabla del campeonato de constructores de Fórmula 1 2026: puntos de cada escudería.">
+<meta name="twitter:image" content="https://foruno.vercel.app/og/foruno.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Campeonato de constructores 2026","item":"https://foruno.vercel.app/equipos"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemList","name":"Campeonato de constructores 2026","url":"https://foruno.vercel.app/equipos","itemListElement":[{"@type":"ListItem","position":1,"name":"Mercedes"},{"@type":"ListItem","position":2,"name":"Ferrari"},{"@type":"ListItem","position":3,"name":"McLaren"},{"@type":"ListItem","position":4,"name":"Red Bull Racing"},{"@type":"ListItem","position":5,"name":"Racing Bulls"},{"@type":"ListItem","position":6,"name":"Alpine"},{"@type":"ListItem","position":7,"name":"Haas F1 Team"},{"@type":"ListItem","position":8,"name":"Audi"},{"@type":"ListItem","position":9,"name":"Williams"},{"@type":"ListItem","position":10,"name":"Aston Martin"}]}</script>
+<!--/foruno:seo--></head>
+<body>
+
+<header id="barra">
+  <a class="marca" href="/">
+    <span class="logo">F1</span>
+    <span class="nombre">ForUno</span>
+  </a>
+
+  <nav id="nav">
+    <a href="/vivo" data-vista="vivo" data-rutas="/vivo" class="nav-vivo" id="navVivo">
+      <span class="punto-vivo"></span>VIVO<span class="cuenta" id="navCuenta"></span>
+    </a>
+    <a href="/" data-vista="calendario" data-rutas="/ /calendario /temporada /gp /ver">Calendario</a>
+    <a href="/pilotos"    data-vista="pilotos" data-rutas="/pilotos /piloto">Pilotos</a>
+    <a href="/equipos"    data-vista="equipos" data-rutas="/equipos">Escuderías</a>
+  </nav>
+
+  <div class="derecha">
+    <select id="temporada" title="Temporada"></select>
+  </div>
+</header>
+
+<main id="vista"><div class="scroll"><div class="ancho">
+      <nav class="migas" aria-label="Dónde estoy"><span>Campeonato de constructores 2026</span></nav>
+      <h1>Campeonato de constructores 2026</h1>
+      <p class="sub">Tabla del campeonato de constructores de Fórmula 1 2026: puntos de cada escudería.</p>
+      <div class="tabla-plana"><table><tr><th>Pos.</th><th>Escudería</th><th>Puntos</th></tr><tr><td>1</td><td>Mercedes</td><td>425</td></tr><tr><td>2</td><td>Ferrari</td><td>338</td></tr><tr><td>3</td><td>McLaren</td><td>263</td></tr><tr><td>4</td><td>Red Bull Racing</td><td>186</td></tr><tr><td>5</td><td>Racing Bulls</td><td>66</td></tr><tr><td>6</td><td>Alpine</td><td>63</td></tr><tr><td>7</td><td>Haas F1 Team</td><td>21</td></tr><tr><td>8</td><td>Audi</td><td>16</td></tr><tr><td>9</td><td>Williams</td><td>11</td></tr><tr><td>10</td><td>Aston Martin</td><td>3</td></tr><tr><td>11</td><td>Cadillac</td><td>0</td></tr></table></div>
+    </div></div></main>
+
+<div id="carga" class="carga oculto">
+  <div class="caja">
+    <h2 id="cargaTitulo">Cargando</h2>
+    <p id="cargaMsg">…</p>
+    <div class="barra-prog"><div id="cargaBarra"></div></div>
+  </div>
+</div>
+
+<template id="tpl-visor">
+  <div class="visor-cab">
+    <a class="volver" href="/" title="Volver al calendario">←</a>
+    <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
+    <div class="paneles" role="group" aria-label="Qué mostrar">
+      <button data-panel="pista" class="activo">Circuito</button>
+      <button data-panel="tabla">Tabla</button>
+    </div>
+    <button class="btn-relato" title="Relato en audio de cómo va la carrera">🔊 Relato</button>
+    <details class="ajustes panel">
+      <summary title="Qué mostrar y de dónde sale">⚙</summary>
+      <div class="aj-menu"></div>
+    </details>
+    <select class="vc-salto" title="Saltar a otra sesión"></select>
+  </div>
+  <section class="visor">
+    <aside class="tabla">
+      <div class="aviso-datos" hidden></div>
+      <div class="tabla-cab">
+        <span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span>
+      </div>
+      <ol class="filas"></ol>
+      <details class="cc-caja relato-caja" hidden>
+        <summary>Relato</summary>
+        <div class="relato-texto"></div>
+      </details>
+      <div class="leyenda">
+        <span class="lg"><i class="sw verde"></i>mejoró</span>
+        <span class="lg"><i class="sw violeta"></i>mejor de la sesión</span>
+        <span class="lg"><i class="sw amarillo"></i>sin mejorar</span>
+        <span class="lg"><i class="sw pit"></i>boxes</span>
+      </div>
+    </aside>
+    <div class="pista">
+      <canvas class="lienzo"></canvas>
+      <div class="avisos"></div>
+      <div class="reloj"></div>
+      <div class="clima" title="Medido en pista, una vez por minuto"></div>
+      <div class="telemetria" hidden></div>
+      <button class="toggle-seg" title="Mostrar u ocultar las barras de microsectores sobre la pista">microsectores</button>
+    </div>
+  </section>
+  <footer class="repro">
+    <button class="play icono" title="Reproducir o pausar (espacio)">▶</button>
+    <div class="tiempo"><span class="t-act">0:00</span> / <span class="t-tot">0:00</span></div>
+    <input type="range" class="scrub" min="0" max="1000" value="0" step="1">
+    <div class="velocidades">
+      <button data-vel="1" class="vel activa">1×</button>
+      <button data-vel="2" class="vel">2×</button>
+      <button data-vel="4" class="vel">4×</button>
+      <button data-vel="10" class="vel">10×</button>
+    </div>
+  </footer>
+</template>
+
+<template id="tpl-vivo">
+  <div class="visor-cab">
+    <span class="chapa-vivo"><span class="punto-vivo"></span>EN VIVO</span>
+    <div class="vc-tit"><strong class="vc-gp"></strong><span class="vc-ses"></span></div>
+    <span class="marcador"><b class="mk-vuelta"></b><span class="mk-reloj"></span></span>
+    <span class="estado-vivo"></span>
+    <div class="paneles" role="group" aria-label="Qué mostrar">
+      <button data-panel="pista" class="activo">Circuito</button>
+      <button data-panel="tabla">Tabla</button>
+    </div>
+    <button class="btn-relato" title="Relato de radio con la voz del navegador">🔊 Relato</button>
+    <button class="btn-lleno" title="Pantalla completa (F)">⛶</button>
+    <details class="ajustes panel">
+      <summary title="Qué mostrar">⚙</summary>
+      <div class="aj-menu"></div>
+    </details>
+  </div>
+  <section class="visor">
+    <aside class="tabla tabla-vivo">
+      <div class="tabla-cab"><span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span></div>
+      <ol class="filas"></ol>
+      <div class="leyenda" title="Rojo: a menos de 0,3 s del de adelante. Violeta: mejor vuelta de la sesión. Verde: mejoró su marca. Amarillo: no mejoró. La posición en el mapa se estima por microsector — la F1 no publica el GPS sin suscripción.">
+        <span class="lg"><i class="sw rojo"></i>0,3 s</span>
+        <span class="lg"><i class="sw violeta"></i>sesión</span>
+        <span class="lg"><i class="sw verde"></i>mejoró</span>
+        <span class="lg"><i class="sw amarillo"></i>no</span>
+        <span class="lg">📍 estimada</span>
+        <span class="error-vivo"></span>
+      </div>
+      <details class="cc-caja relato-caja" hidden>
+        <summary>Relato</summary>
+        <div class="relato-texto"></div>
+      </details>
+      <details class="cc-caja radio-caja">
+        <summary>Radio y avisos <span class="rd-quien"></span></summary>
+        <div class="rd-mandos">
+          <select class="radio-piloto" title="De quién escuchar las comunicaciones"></select>
+          <label class="radio-auto"><input type="checkbox" class="radio-solo" checked>reproducir sola</label>
+        </div>
+        <div class="radios"></div>
+      </details>
+      <details class="cc-caja">
+        <summary>Dirección de carrera <span class="cc-ultimo"></span></summary>
+        <div class="control-carrera"></div>
+      </details>
+    </aside>
+    <div class="pista">
+      <canvas class="lienzo"></canvas>
+      <div class="banda-pista"></div>
+      <div class="alertas"></div>
+    </div>
+  </section>
+</template>
+
+<script src="/ajustes.js"></script>
+<script src="/vivo.js"></script>
+<script src="/relator.js"></script>
+<script src="/visor.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

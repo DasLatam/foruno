@@ -1,0 +1,12 @@
+# ForUno — https://foruno.vercel.app
+# Proyecto personal, datos de OpenF1 (CC BY-NC-SA 4.0).
+
+User-agent: *
+Allow: /
+
+# Los JSON crudos no aportan nada en una búsqueda y son pesados: el mismo
+# contenido está en las páginas HTML, que sí conviene rastrear.
+Disallow: /data/
+Disallow: /api/
+
+Sitemap: https://foruno.vercel.app/sitemap.xml
