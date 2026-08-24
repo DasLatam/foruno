@@ -708,3 +708,190 @@ body.lleno .tabla-vivo .leyenda{display:none}
   display:block; font-style:normal; font-size:10px; color:var(--tenue);
   opacity:.75; margin-top:1px;
 }
+
+/* ---------------- carteles del guion (visor de replays) ---------------- */
+.modal-guion{
+  background:rgba(16,20,28,.96); border:1px solid var(--borde);
+  border-left:3px solid var(--tenue); border-radius:7px; padding:7px 11px;
+  font-size:12.5px; line-height:1.4; color:var(--texto);
+  max-width:min(460px,60%); animation:entrar .25s ease-out;
+}
+.modal-guion b{display:block; font-size:10px; color:var(--tenue); margin-bottom:2px;
+               letter-spacing:.5px}
+.modal-guion.radio{border-left-color:#5aa9e6}
+.modal-guion.radio b{color:#8ecbff}
+.modal-guion.roja{border-left-color:var(--acento); background:rgba(52,10,10,.96)}
+.modal-guion.sc{border-left-color:#ff9600; background:rgba(52,32,4,.96)}
+.modal-guion.penal{border-left-color:#ff9600}
+.modal-guion.amarilla{border-left-color:var(--amarillo)}
+.modal-guion.verde{border-left-color:var(--verde)}
+@keyframes entrar{from{opacity:0; transform:translateY(-6px)}to{opacity:1}}
+.aj-grupo label.aj-no{opacity:.45; cursor:not-allowed}
+.aj-grupo label em{font-style:normal; font-size:10px; color:var(--tenue)}
+/* Lo que apagan los ajustes del visor. */
+body.no-control .modal-guion:not(.radio){display:none}
+body.no-radio .modal-guion.radio{display:none}
+body.no-segsMapa .lienzo{--sin-barras:1}
+.modal-guion.sobrepaso{border-left-color:var(--acento); background:rgba(52,10,10,.96)}
+.modal-guion.sobrepaso b{color:#ff8f8b}
+
+/* ================= panel de configuración (visor) =================
+   El menú de una sola columna alcanzaba cuando eran ocho casillas. Ahora el
+   panel además explica qué es cada cosa y cuánto trajo la sesión, así que
+   necesita ancho: se vuelve un panel de varias columnas, todavía anclado al ⚙
+   pero limitado a la altura de la ventana para que nunca se corte abajo. */
+.ajustes.panel .aj-menu{
+  width:min(660px,92vw); max-height:min(78vh,620px); overflow-y:auto;
+  padding:14px 16px 12px; gap:12px;
+}
+.aj-cab h3{margin:0 0 3px; font-size:14px}
+.aj-cab p{margin:0; font-size:11.5px; color:var(--tenue); line-height:1.45; text-align:justify}
+.aj-cols{display:grid; grid-template-columns:1fr 1fr; gap:12px 20px}
+.aj-cols .aj-grupo label{
+  align-items:flex-start; gap:8px; padding:4px 0;
+  border-bottom:1px solid rgba(39,48,67,.5);
+}
+.aj-cols .aj-grupo label:last-child{border-bottom:none}
+.aj-cols input[type=checkbox]{margin-top:2px; flex:0 0 auto; accent-color:var(--acento)}
+.aj-txt{flex:1 1 auto; min-width:0; display:flex; flex-direction:column}
+.aj-txt b{font-weight:600; font-size:12px}
+.aj-txt i{font-style:normal; font-size:10.5px; color:var(--tenue); line-height:1.35}
+.aj-n{
+  font-style:normal; font-size:10px; color:var(--tenue); flex:0 0 auto;
+  font-variant-numeric:tabular-nums; background:var(--panel2);
+  border-radius:4px; padding:1px 5px; align-self:flex-start;
+}
+.aj-falta{
+  font-style:normal; font-size:10px; color:var(--tenue); flex:0 0 auto;
+  align-self:flex-start; text-align:right; max-width:88px; line-height:1.25;
+}
+.aj-pedir{
+  font-size:10px; padding:2px 7px; flex:0 0 auto; align-self:flex-start;
+  background:var(--acento); border-color:var(--acento); color:#fff;
+}
+.aj-pedir:disabled{opacity:.6; cursor:wait}
+
+/* La ficha: de dónde sale cada cosa. Va plegada porque es el detalle, no la
+   decisión — pero está, porque cuando un dato falta lo primero que se quiere
+   saber es si el agujero es de OpenF1 o del propio ForUno. */
+.aj-datos{border-top:1px solid var(--borde); padding-top:8px}
+.aj-datos summary{cursor:pointer; font-size:11px; color:var(--tenue); padding:2px 0}
+.aj-datos table{width:100%; border-collapse:collapse; margin-top:6px; font-size:10.5px}
+.aj-datos th{
+  text-align:left; font-weight:600; padding:3px 8px 3px 0; white-space:nowrap;
+  vertical-align:top;
+}
+.aj-datos td{padding:3px 8px 3px 0; color:var(--tenue); vertical-align:top; text-align:justify}
+.aj-datos tr{border-bottom:1px solid rgba(39,48,67,.5)}
+.aj-datos code{font-size:10px; color:var(--tenue); white-space:nowrap}
+.aj-datos .ok{color:var(--verde); white-space:nowrap}
+.aj-datos .no{color:var(--tenue); white-space:nowrap}
+.aj-datos .opt{color:var(--amarillo); white-space:nowrap}
+.aj-pie{margin:8px 0 0; font-size:10px; color:var(--tenue); line-height:1.4}
+.aj-pie a{text-decoration:underline}
+
+/* En el celular el panel no puede colgar del ⚙: la barra del visor lleva
+   `overflow:hidden` para que el título no la desarme, y eso recorta cualquier
+   cosa absoluta que salga de ella. Pasa a ser una hoja anclada abajo —
+   `position:fixed` no la recorta ningún `overflow` — que además es la forma en
+   que se espera que se abra un panel en un teléfono. */
+@media (max-width:720px){
+  .ajustes.panel .aj-menu{
+    position:fixed; inset:auto 8px 8px 8px; width:auto;
+    max-height:min(80vh,700px);
+  }
+  .aj-cols{grid-template-columns:1fr}
+}
+
+/* ================= datos nuevos en la tabla ================= */
+.pos{display:flex; flex-direction:column; align-items:flex-end; line-height:1.05}
+.pos b{font-weight:600; color:var(--texto)}
+/* Cuánto ganó o perdió respecto de la grilla. Es un número chico al lado del
+   puesto, no una columna: ocupa cero y convierte la tabla en una historia. */
+.dgrid{font-style:normal; font-size:8.5px; letter-spacing:-.2px}
+.dgrid.sube{color:var(--verde)} .dgrid.baja{color:var(--acento)}
+.dgrid.igual{color:var(--tenue); opacity:.5}
+.pits{
+  font-size:9px; color:var(--tenue); flex:0 0 auto; letter-spacing:-.5px;
+  background:var(--panel2); border-radius:4px; padding:0 4px; cursor:help;
+}
+.filas li.foco{background:var(--panel2); box-shadow:inset 0 0 0 1px var(--borde)}
+.filas li{cursor:pointer}
+
+body.no-goma .neu{display:none}
+body.no-pits .pits{display:none}
+body.no-grid .dgrid{display:none}
+body.no-segs .segs{display:none}
+
+/* ================= clima y telemetría sobre el mapa ================= */
+.clima{
+  position:absolute; top:12px; left:50%; transform:translateX(-50%);
+  font-size:11px; color:var(--tenue); background:rgba(11,14,19,.75);
+  padding:4px 10px; border-radius:6px; border:1px solid var(--borde);
+  white-space:nowrap; pointer-events:none;
+}
+body.no-clima .clima{display:none}
+
+/* La banda de telemetría del piloto elegido. Va abajo del mapa y no del lado
+   de la tabla a propósito: lo que se está mirando cuando importa el acelerador
+   es el auto en la curva, no la fila. */
+.telemetria{
+  position:absolute; left:12px; right:12px; bottom:12px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  background:rgba(11,14,19,.9); border:1px solid var(--borde);
+  border-radius:8px; padding:7px 12px; font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.telemetria[hidden]{display:none}
+.tl-quien{font-size:14px; font-weight:800; letter-spacing:-.3px}
+.tl-v,.tl-g,.tl-rpm{display:flex; align-items:baseline; gap:4px; font-weight:600}
+.tl-v{font-size:17px}
+.tl-v i,.tl-g i,.tl-rpm i{font-style:normal; font-size:9px; color:var(--tenue);
+  text-transform:uppercase; letter-spacing:.5px}
+.tl-barra{position:relative; flex:1 1 90px; height:16px; min-width:70px;
+  background:var(--panel2); border-radius:4px; overflow:hidden}
+.tl-barra i{position:absolute; inset:0 auto 0 0; display:block; border-radius:4px}
+.tl-barra.ac i{background:var(--verde)}
+.tl-barra.fr i{background:var(--acento)}
+.tl-barra em{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-size:9px; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--texto); mix-blend-mode:difference;
+}
+.tl-drs{
+  font-size:10px; font-weight:800; letter-spacing:.5px; padding:3px 7px;
+  border-radius:4px; background:var(--panel2); color:var(--tenue);
+}
+.tl-drs.on{background:var(--verde); color:#0b0e13}
+body.no-tele .telemetria{display:none}
+@media (max-width:720px){
+  .telemetria{font-size:11px; gap:8px; padding:5px 8px}
+  .tl-barra{flex:1 1 60px; min-width:50px}
+  .tl-rpm{display:none}
+}
+
+/* ================= carteles nuevos ================= */
+.modal-guion.paso{border-left-color:#3b9dff}
+.modal-guion.paso b{color:#8ecbff}
+.modal-guion.pit{border-left-color:#f5a623}
+.modal-guion.pit b{color:#ffcb6b}
+.modal-guion.bandera{
+  border-left-color:#e8ecf4; background:rgba(232,236,244,.12); font-size:14px;
+}
+.modal-guion.bandera b{color:#e8ecf4; font-size:11px}
+body.no-pasos .modal-guion.paso{display:none}
+body.no-pits .modal-guion.pit{display:none}
+
+/* Cuando a OpenF1 le falta el GPS de la sesión. Va arriba de la tabla, en el
+   lugar donde el usuario ya está mirando, y no como cartel que se va. */
+.aviso-datos{
+  flex:0 0 auto; margin:8px 10px 0; padding:7px 10px; border-radius:7px;
+  background:rgba(245,197,24,.1); border:1px solid rgba(245,197,24,.35);
+  font-size:11px; line-height:1.45; color:var(--texto); text-align:justify;
+}
+.aviso-datos[hidden]{display:none}
+.aviso-datos b{display:block; color:var(--amarillo); font-size:10px;
+  text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px}
+.tl-drs.sin{opacity:.35; text-decoration:line-through; cursor:help}
+.pista.con-tele .toggle-seg{bottom:58px}
+.pista.con-tele .telemetria{right:12px}

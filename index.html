@@ -51,14 +51,24 @@
       <button data-panel="pista" class="activo">Circuito</button>
       <button data-panel="tabla">Tabla</button>
     </div>
+    <button class="btn-relato" title="Relato en audio de cómo va la carrera">🔊 Relato</button>
+    <details class="ajustes panel">
+      <summary title="Qué mostrar y de dónde sale">⚙</summary>
+      <div class="aj-menu"></div>
+    </details>
     <select class="vc-salto" title="Saltar a otra sesión"></select>
   </div>
   <section class="visor">
     <aside class="tabla">
+      <div class="aviso-datos" hidden></div>
       <div class="tabla-cab">
         <span>#</span><span>Piloto</span><span class="der">Intervalo</span><span class="der">Líder</span><span class="der">Última</span>
       </div>
       <ol class="filas"></ol>
+      <details class="cc-caja relato-caja" hidden>
+        <summary>Relato</summary>
+        <div class="relato-texto"></div>
+      </details>
       <div class="leyenda">
         <span class="lg"><i class="sw verde"></i>mejoró</span>
         <span class="lg"><i class="sw violeta"></i>mejor de la sesión</span>
@@ -70,6 +80,8 @@
       <canvas class="lienzo"></canvas>
       <div class="avisos"></div>
       <div class="reloj"></div>
+      <div class="clima" title="Medido en pista, una vez por minuto"></div>
+      <div class="telemetria" hidden></div>
       <button class="toggle-seg" title="Mostrar u ocultar las barras de microsectores sobre la pista">microsectores</button>
     </div>
   </section>
@@ -98,7 +110,7 @@
     </div>
     <button class="btn-relato" title="Relato de radio con la voz del navegador">🔊 Relato</button>
     <button class="btn-lleno" title="Pantalla completa (F)">⛶</button>
-    <details class="ajustes">
+    <details class="ajustes panel">
       <summary title="Qué mostrar">⚙</summary>
       <div class="aj-menu"></div>
     </details>

@@ -22,6 +22,7 @@ const app = {
   vivoActivo: false,
   circuitos: null,
   live: null,          // último estado de /api/live
+  catalogo: null,      // qué se puede traer de una sesión (data/catalogo.json)
   timerBanner: 0,
 };
 
@@ -476,15 +477,12 @@ async function vistaVivo() {
   };
   document.addEventListener("keydown", app.onTeclaVivo);
 
-  Ajustes.montar($(".aj-menu"));
+  Ajustes.declarar({});
+  Ajustes.montar($(".aj-menu"), "vivo");
   // Apagar una columna cambia lo que hay que dibujar, así que se repinta al
   // toque en vez de esperar al próximo sondeo.
   Ajustes.alCambiar(() => { if (app.vivoActivo) Vivo.repintar(); });
-  // Un clic afuera cierra el menú: es lo que espera cualquiera.
-  document.addEventListener("click", (e) => {
-    const aj = $(".ajustes");
-    if (aj && aj.open && !aj.contains(e.target)) aj.open = false;
-  });
+  document.addEventListener("click", cerrarAjustes);
 
   try {
     await Vivo.montar($("#vista"), app.live, app.circuitos);
@@ -639,6 +637,12 @@ function panelesMoviles() {
   elegir(guardado);
 }
 
+/* Un clic afuera cierra el menú de ajustes: es lo que espera cualquiera. */
+function cerrarAjustes(e) {
+  const aj = $(".ajustes");
+  if (aj && aj.open && !aj.contains(e.target)) aj.open = false;
+}
+
 /* ------------------------------------------------------------ visor */
 
 function buscarSesion(key) {
@@ -718,7 +722,156 @@ async function vistaVisor(key) {
 
   Visor.montar($("#vista"), replay);
   panelesMoviles();
+
+  // El relato de una sesión pasada: los mismos eventos que en el vivo, más lo
+  // que se dijo por radio y por dirección de carrera, en el momento en que pasó.
+  const btnR = $(".btn-relato");
+  const cajaR = $(".relato-caja");
+  Visor.usarRelator(Relator);
+  if (btnR) {
+    btnR.onclick = () => {
+      if (Relator.activo()) {
+        Relator.parar(); btnR.classList.remove("activo");
+        if (cajaR) cajaR.hidden = true;
+      } else {
+        Relator.arrancar(); btnR.classList.add("activo");
+        if (cajaR) { cajaR.hidden = false; cajaR.open = true; }
+      }
+    };
+  }
+
+  // El guion es opcional: si esa sesión todavía no lo tiene armado, el visor
+  // funciona igual, sin carteles ni radio.
+  const falta = {};
+  let radiosDelGuion = 0;
+  if (!Visor.haySegmentos()) {
+    falta.segs = "esta sesión no los trae";
+    falta.segsMapa = "esta sesión no los trae";
+  }
+  try {
+    const r = await fetch(`/data/guiones/${key}.json`);
+    if (!r.ok) throw new Error("sin guion");
+    const g = await r.json();
+    const items = g.items || [];
+    Visor.usarGuion(items);
+    const radios = items.filter((x) => x.tipo === "radio").length;
+    radiosDelGuion = radios;
+    const avisos = items.length - radios;
+    if (!radios) falta.radio = falta.relRadio = "sin radios en esta sesión";
+    if (!avisos) falta.control = falta.relControl = "sin avisos en esta sesión";
+    if (btnR) btnR.title = `Relato en audio · ${avisos} avisos y ${radios} radios`;
+  } catch {
+    falta.radio = falta.control = "esta sesión todavía no tiene guion";
+    falta.relRadio = falta.relControl = "esta sesión todavía no tiene guion";
+    if (btnR) btnR.title = "Relato en audio (sin radio ni avisos: falta el guion)";
+  }
+
+  // El panel dice qué trae ESTA sesión: lo que no está aparece apagado y con el
+  // motivo, en vez de dejar prendiendo algo que nunca va a pasar. El inventario
+  // se cuenta sobre el replay que se acaba de bajar, no sobre lo que la API
+  // debería haber dado: es la única forma honesta de decir "no lo trae".
+  const inv = inventarioDe(replay);
+  inv.radio = radiosDelGuion;
+  // La telemetría no se cuenta como "traída" hasta que se baja: son ~6 MB y el
+  // panel tiene que poder ofrecerla en vez de bajarla sin preguntar. El índice
+  // sí sabe si está publicada, y de eso depende que el botón diga "mostrar"
+  // (un fetch) o "bajar" (una descarga de OpenF1, sólo en el portal local).
+  inv.car_data = 0;
+  const publicada = !!app.indice?.datos?.[key]?.car_data;
+
+  // La telemetría del auto vive en su propio archivo. Se pide sola si el
+  // usuario ya la tenía prendida de otra sesión; si no, el panel ofrece el
+  // botón. Son ~2 MB por carrera: no se le bajan a quien no los mire.
+  const cargarTele = async () => {
+    const t = await pedirTelemetria(key);
+    if (!t) return false;
+    Visor.usarTelemetria(t);
+    inv.car_data = Object.keys(t.pilotos || {}).length;
+    Ajustes.declarar(falta, inv);
+    return true;
+  };
+  Ajustes.alPedir(async (fuente) => {
+    if (fuente === "car_data") return cargarTele();
+    return false;
+  }, { car_data: publicada ? "mostrar" : (app.apiLocal ? "bajar" : null) });
+
+  avisoDeDatos(replay);
+  Ajustes.declarar(falta, inv);
+  Ajustes.montar($(".aj-menu"), "visor");
+  Ajustes.alCambiar(() => { if (app.visorActivo) Visor.repintar(); });
+  document.addEventListener("click", cerrarAjustes);
   overlay(null);
+
+  if (Ajustes.get("tele")) cargarTele();
+}
+
+/* Cuántos registros trajo cada fuente del catálogo, contados sobre el propio
+   replay. El catálogo dice en qué clave aterriza cada una, así que agregar una
+   fuente nueva no obliga a tocar esta función. */
+function inventarioDe(replay) {
+  const inv = {};
+  for (const f of (app.catalogo?.fuentes || [])) {
+    if (!f.clave) continue;
+    const v = replay[f.clave];
+    // Las posiciones son un blob base64 por piloto: lo que se cuenta es a
+    // cuántos autos se les tiene la traza, no cuántos caracteres ocupa.
+    if (f.contar === "claves") inv[f.id] = v && typeof v === "object" ? Object.keys(v).length : 0;
+    else if (Array.isArray(v)) inv[f.id] = v.length;
+    else if (v && typeof v === "object") {
+      inv[f.id] = Object.values(v).reduce((a, x) =>
+        a + (Array.isArray(x) ? x.length : (x?.t?.length ?? 0)), 0);
+    } else inv[f.id] = 0;
+  }
+  // Los microsectores son parte de `laps` pero pueden faltar solos: hay
+  // sesiones enteras sin ellos y otras que se bajaron antes de que OpenF1 los
+  // publicara.
+  inv.microsectores = Object.values(replay.laps || {})
+    .reduce((a, ls) => a + ls.filter((l) => l.s && l.s.length).length, 0);
+  return inv;
+}
+
+/* Cuando OpenF1 no tiene el GPS completo de una sesión, decirlo. El caso real
+   es Mónaco 2026: la API publica las vueltas y los resultados pero casi nada de
+   `location`, así que el replay dura minutos en vez de dos horas. Sin el aviso
+   parece que el visor está roto. */
+function avisoDeDatos(replay) {
+  const el = $(".aviso-datos");
+  if (!el) return;
+  const c = replay.cobertura;
+  if (!c || c.completa) { el.hidden = true; return; }
+  const min = Math.round(c.falta / 60);
+  el.hidden = false;
+  el.innerHTML = `<b>Datos incompletos</b> OpenF1 no publicó la posición en
+    pista de ${min >= 2 ? `los últimos ${min} minutos` : "el final"} de esta
+    sesión. Las vueltas y el resultado sí están completos.`;
+}
+
+/* La telemetría: del sitio estático si ya está publicada; del portal local, que
+   además puede bajarla al vuelo. */
+async function pedirTelemetria(key) {
+  try {
+    const r = await fetch(`/data/telemetria/${key}.json`);
+    if (r.ok) return await r.json();
+  } catch { /* se intenta la API local */ }
+  if (!app.apiLocal) return null;
+  overlay("Telemetría del auto", "bajando de OpenF1…", 10);
+  try {
+    await fetch(`/api/telemetria/${key}`, { method: "POST" });
+    const listo = await new Promise((resolve) => {
+      const timer = setInterval(async () => {
+        let p;
+        try { p = await (await fetch(`/api/telemetria/${key}`)).json(); } catch { return; }
+        overlay("Telemetría del auto", p.mensaje || "…", p.pct);
+        if (p.estado === "listo") { clearInterval(timer); resolve(true); }
+        else if (p.estado === "error") { clearInterval(timer); resolve(false); }
+      }, 1000);
+    });
+    if (!listo) return null;
+    const r = await fetch(`/api/telemetria/${key}?datos=1`);
+    return r.ok ? await r.json() : null;
+  } finally {
+    overlay(null);
+  }
 }
 
 /* ------------------------------------------------------------ router */
@@ -734,7 +887,11 @@ const RUTAS = [
 ];
 
 async function rutear() {
-  if (app.visorActivo) { Visor.destruir(); app.visorActivo = false; }
+  if (app.visorActivo) {
+    Visor.destruir(); app.visorActivo = false;
+    Relator.parar();
+    document.removeEventListener("click", cerrarAjustes);
+  }
   if (app.vivoActivo) {
     Vivo.destruir(); app.vivoActivo = false;
     document.body.classList.remove("lleno");
@@ -770,6 +927,15 @@ async function rutear() {
     const r = await fetch("/data/temporadas.json");
     app.temporadas = r.ok ? await r.json() : [new Date().getFullYear()];
   } catch { app.temporadas = [new Date().getFullYear()]; }
+
+  // El catálogo describe cada fuente de datos: qué es, de qué endpoint sale y
+  // cuánto pesa. Lo declara `catalogo.py` y lo publica el exportador, así que
+  // el panel de configuración y el backend nunca se desincronizan. Si falta,
+  // el panel sigue andando: se queda sin las fichas explicativas.
+  try {
+    const r = await fetch("/data/catalogo.json");
+    if (r.ok) { app.catalogo = await r.json(); Ajustes.usarCatalogo(app.catalogo.fuentes); }
+  } catch { /* sin catálogo el panel funciona igual */ }
 
   const sel = $("#temporada");
   sel.innerHTML = app.temporadas.map((y) => `<option value="${y}">${y}</option>`).join("");
