@@ -56,11 +56,11 @@
   "rewrites": [
     {
       "source": "/ver/:key(\\d+)",
-      "destination": "/index.html"
+      "destination": "/"
     },
     {
       "source": "/gp/:key(\\d+)",
-      "destination": "/index.html"
+      "destination": "/"
     }
   ]
 }

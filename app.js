@@ -843,11 +843,17 @@ async function vistaVisor(key) {
   const opciones = [];
   for (const g of app.indice.gps) {
     for (const x of g.sesiones) {
-      if (x.replay) opciones.push({ key: x.key, txt: `${g.bandera} ${g.nombre} — ${x.nombre}` });
+      // El value es el slug, no la clave: así el selector navega directo a la
+      // URL canónica y no a la ruta numérica, que sólo existe por compatibilidad.
+      if (x.replay) {
+        opciones.push({ v: x.slug || x.key,
+                        txt: `${g.bandera} ${g.nombre_es || g.nombre} — ${nombreSesion(x)}` });
+      }
     }
   }
   salto.innerHTML = opciones.map((o) =>
-    `<option value="${o.key}"${String(o.key) === String(key) ? " selected" : ""}>${esc(o.txt)}</option>`).join("");
+    `<option value="${esc(o.v)}"${
+      String(o.v) === String(s.slug || key) ? " selected" : ""}>${esc(o.txt)}</option>`).join("");
   salto.onchange = () => ir("/ver/" + salto.value);
 
   Visor.montar($("#vista"), replay);
