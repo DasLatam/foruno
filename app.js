@@ -477,6 +477,9 @@ async function vistaVivo() {
   };
   document.addEventListener("keydown", app.onTeclaVivo);
 
+  // El directo no tiene nada que bajar aparte: se limpia el botón que pudo
+  // haber dejado el visor de replays, que vive en el mismo módulo.
+  Ajustes.alPedir(null, {});
   Ajustes.declarar({});
   Ajustes.montar($(".aj-menu"), "vivo");
   // Apagar una columna cambia lo que hay que dibujar, así que se repinta al
