@@ -36,7 +36,7 @@ const UA = { "User-Agent": "BestHTTP" };
 const TOPICS = ["Heartbeat", "SessionInfo", "SessionStatus", "DriverList",
                 "TimingData", "Position.z", "TrackStatus", "LapCount",
                 "RaceControlMessages", "SessionData", "ExtrapolatedClock",
-                "TimingAppData", "TeamRadio"];
+                "TimingAppData", "TimingStats", "TeamRadio"];
 
 /* ------------------------------------------------------------ estado */
 
@@ -57,6 +57,11 @@ const S = {
   mensajes: [],             // RaceControlMessages
   vistos: new Set(),        // claves de mensajes ya guardados, para no duplicar
   stints: {},               // TimingAppData.Lines: los juegos de neumáticos
+  stats: {},                // TimingStats.Lines: mejor vuelta, mejores sectores
+                            // y las cuatro velocidades medidas. Es lo único que
+                            // no se puede reconstruir desde TimingData: la F1
+                            // publica ahí el acumulado de la sesión ya resuelto,
+                            // con la posición de cada marca.
   radios: [],               // TeamRadio: las comunicaciones piloto-equipo
   radiosVistas: new Set(),
 };
@@ -145,6 +150,9 @@ function aplicar(topic, contenido) {
     }
     case "TimingAppData":
       if (contenido?.Lines) fundir(S.stints, contenido.Lines);
+      break;
+    case "TimingStats":
+      if (contenido?.Lines) fundir(S.stats, contenido.Lines);
       break;
     case "TeamRadio": {
       // Cada captura es un mp3 servido bajo el directorio de la sesión. A
@@ -258,6 +266,89 @@ function neumatico(num) {
   };
 }
 
+/* Todo lo que hay de un piloto, para la ficha que se abre al hacerle clic.
+ *
+ * Va **a pedido** y no dentro de la foto general por una razón de peso: la foto
+ * se pide cada dos segundos y esto es medio kilobyte por piloto —los juegos de
+ * gomas, las cuatro velocidades y los mejores sectores con su posición—. Por
+ * veintidós autos son unos 10 KB que se mandan treinta veces por minuto a cada
+ * persona que está mirando, para pintar una ficha que se abre de a una y por
+ * unos segundos. El estado ya está en memoria, así que el pedido extra sale
+ * gratis del lado del servidor.
+ *
+ * `TimingStats` es la fuente de las marcas acumuladas de la sesión. No se
+ * reconstruyen desde `TimingData` porque ahí llegan vuelta a vuelta y sin la
+ * posición: la F1 ya hace esa cuenta y la publica resuelta.
+ *
+ * Las cuatro velocidades son las que mide la F1 y **no hay más**: I1 e I2 son
+ * los puntos intermedios donde parte los sectores, FL es la línea de meta y ST
+ * es la trampa de velocidad, que en cada circuito está en la recta más larga.
+ * No existe una "velocidad máxima en curva" en el feed, así que no se inventa.
+ */
+function detalle(num) {
+  const l = S.lineas[num];
+  if (!l) return null;
+  const st = S.stats[num] || {};
+  const marca = (x) => (x && x.Value ? { v: x.Value, pos: x.Position ?? null } : null);
+
+  return {
+    pos: l.Position != null ? Number(l.Position) : null,
+    vueltas: l.NumberOfLaps ?? null,
+    gap: l.GapToLeader ?? "",
+    intervalo: l.IntervalToPositionAhead?.Value ?? "",
+    ultimaVuelta: l.LastLapTime?.Value ?? "",
+    boxes: !!l.InPit, abandono: !!l.Retired, detenido: !!l.Stopped,
+
+    mejorVuelta: st.PersonalBestLapTime?.Value
+      ? { v: st.PersonalBestLapTime.Value,
+          vuelta: st.PersonalBestLapTime.Lap ?? null,
+          pos: st.PersonalBestLapTime.Position ?? null }
+      : (l.BestLapTime?.Value ? { v: l.BestLapTime.Value, vuelta: null, pos: null } : null),
+
+    mejoresSectores: comoLista(st.BestSectors).map(marca),
+
+    // El orden importa: primero la trampa de velocidad, que es el número que la
+    // gente busca ("¿a cuánto pasa por la recta?"), y después los otros tres.
+    velocidades: {
+      trampa: marca(st.BestSpeeds?.ST),
+      meta: marca(st.BestSpeeds?.FL),
+      inter1: marca(st.BestSpeeds?.I1),
+      inter2: marca(st.BestSpeeds?.I2),
+    },
+
+    // Los juegos de gomas, en orden y **uno por cubierta**, no uno por
+    // registro.
+    //
+    // La F1 abre una entrada de `Stints` cada vez que el auto para, incluso
+    // cuando no cambió las gomas: esa entrada llega con `TyresNotChanged: "1"`
+    // y es la continuación del juego anterior, con el contador de vueltas
+    // acumulado. Listadas tal cual, Hamilton en la FP2 de Monza aparecía con
+    // cuatro juegos —MEDIUM, MEDIUM, SOFT, SOFT— cuando había usado dos.
+    //
+    // `TotalLaps` son las vueltas que tiene encima el juego, incluidas las que
+    // ya traía si salió usado; `StartLaps`, las que traía al ponérselo. La
+    // resta es lo que hizo con él en esta sesión.
+    juegos: comoLista(S.stints[num]?.Stints).reduce((acc, x) => {
+      const previo = acc[acc.length - 1];
+      if (x.TyresNotChanged === "1" && previo) {
+        // Misma cubierta: se queda el conteo más alto, que es el de la última.
+        previo.vueltas = Math.max(previo.vueltas ?? 0, x.TotalLaps ?? 0);
+        previo.paradas = (previo.paradas || 0) + 1;
+        return acc;
+      }
+      acc.push({
+        compuesto: x.Compound || null,
+        vueltas: x.TotalLaps ?? null,
+        alPoner: x.StartLaps ?? null,
+        nuevo: x.New === "true" || x.New === true,
+        desdeVuelta: x.LapNumber ?? null,
+        paradas: 0,
+      });
+      return acc;
+    }, []),
+  };
+}
+
 /* Estado de un piloto, quedándonos sólo con lo que el visor usa. */
 function compactar() {
   const out = {};
@@ -335,6 +426,15 @@ module.exports = async (req, res) => {
 
     if (!url.searchParams.get("path")) {
       return res.status(200).json(descubrir());
+    }
+
+    // Ficha de un piloto, a pedido. Ver el comentario de `detalle()`.
+    const pedido = url.searchParams.get("detalle");
+    if (pedido) {
+      const d = detalle(pedido);
+      return res.status(200).json(
+        d ? { num: Number(pedido), detalle: d, ts: new Date(S.ultimo).toISOString() }
+          : { num: Number(pedido), detalle: null });
     }
 
     // El estado completo está siempre en memoria, así que ya no hace falta
